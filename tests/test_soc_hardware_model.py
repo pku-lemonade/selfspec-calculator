@@ -215,6 +215,50 @@ def test_layer_pipelined_schedule_reduces_reported_latency() -> None:
     assert m1.latency_ns_per_token <= m0.latency_ns_per_token
 
 
+def test_layer_pipelined_can_be_memory_bottlenecked_and_is_not_naive_divide_by_layers() -> None:
+    model = ModelConfig.model_validate(
+        {
+            "n_layers": 4,
+            "d_model": 64,
+            "n_heads": 8,
+            "activation_bits": 12,
+            "ffn_type": "mlp",
+            "ffn_expansion": 4.0,
+        }
+    )
+    stats = SpeculationStats(k=2, histogram={0: 1.0})
+
+    base_hw = {
+        "reuse_policy": "reuse",
+        "costs": {
+            "analog_draft": {"energy_pj_per_mac": 0.0, "latency_ns_per_mac": 0.0},
+            "analog_full": {"energy_pj_per_mac": 0.0, "latency_ns_per_mac": 0.0},
+            "analog_verify_reuse": {"energy_pj_per_mac": 0.0, "latency_ns_per_mac": 0.0},
+            "digital_attention": {"energy_pj_per_mac": 0.0, "latency_ns_per_mac": 0.0},
+            "digital_softmax": {"energy_pj_per_mac": 0.0, "latency_ns_per_mac": 0.0},
+            "digital_elementwise": {"energy_pj_per_mac": 0.0, "latency_ns_per_mac": 0.0},
+            "kv_cache": {"energy_pj_per_mac": 0.0, "latency_ns_per_mac": 0.0},
+            "analog_weight_area": {"area_mm2_per_weight": 0.0},
+            "digital_overhead_area_mm2_per_layer": 0.0,
+        },
+        "memory": {
+            "sram": {"read_bandwidth_GBps": 1e12, "write_bandwidth_GBps": 1e12},
+            "hbm": {"read_bandwidth_GBps": 1e12, "write_bandwidth_GBps": 1e12, "read_latency_ns": 1000.0},
+            "fabric": {"read_bandwidth_GBps": 1e12, "write_bandwidth_GBps": 1e12},
+        },
+    }
+
+    hw_serial = HardwareConfig.model_validate({**base_hw, "soc": {"schedule": "serialized"}})
+    hw_pipe = HardwareConfig.model_validate({**base_hw, "soc": {"schedule": "layer-pipelined"}})
+
+    m0, _ = estimate_point(model=model, hardware=hw_serial, stats=stats, l_prompt=64)
+    m1, _ = estimate_point(model=model, hardware=hw_pipe, stats=stats, l_prompt=64)
+
+    assert m1.energy_pj_per_token == pytest.approx(m0.energy_pj_per_token)
+    assert m1.latency_ns_per_token == pytest.approx(m0.latency_ns_per_token)
+    assert m1.latency_ns_per_token > (m0.latency_ns_per_token / model.n_layers) * 2.0
+
+
 def test_verify_setup_is_charged_once_per_burst() -> None:
     model = ModelConfig.model_validate(BASE_MODEL)
     hardware = _base_knob_hardware(
@@ -228,3 +272,30 @@ def test_verify_setup_is_charged_once_per_burst() -> None:
 
     assert b1.verify_bonus.stages.control_latency_ns == pytest.approx(b4.verify_bonus.stages.control_latency_ns)
     assert b1.verify_bonus.stages.control_latency_ns == pytest.approx(model.n_layers * 100.0)
+
+
+def test_max_context_tokens_enforced_when_set() -> None:
+    model = ModelConfig.model_validate(BASE_MODEL)
+    stats = SpeculationStats(k=4, histogram={0: 1.0})
+
+    hardware = _base_knob_hardware(
+        memory={
+            "kv_cache": {"max_context_tokens": 64},
+        }
+    )
+
+    with pytest.raises(ValueError, match=r"max_context_tokens"):
+        estimate_point(model=model, hardware=hardware, stats=stats, l_prompt=61)
+
+
+def test_max_context_tokens_not_enforced_when_unset() -> None:
+    model = ModelConfig.model_validate(BASE_MODEL)
+    stats = SpeculationStats(k=4, histogram={0: 1.0})
+
+    hardware = _base_knob_hardware(
+        memory={
+            "kv_cache": {},
+        }
+    )
+
+    estimate_point(model=model, hardware=hardware, stats=stats, l_prompt=61)

@@ -1,0 +1,64 @@
+reuse_policy: reuse
+library: puma_like_v1
+
+soc:
+  # In layer-pipelined mode, latency/token is reported as a steady-state token period
+  # bounded by the slowest layer-stage and shared resources (e.g., memory bandwidth).
+  schedule: layer-pipelined
+
+memory:
+  # Bytes-based KV-cache model (Policy B): HBM writes are commit-only.
+  sram:
+    read_energy_pj_per_byte: 0.1
+    write_energy_pj_per_byte: 0.2
+    read_bandwidth_GBps: 2000.0
+    write_bandwidth_GBps: 2000.0
+    read_latency_ns: 5.0
+    write_latency_ns: 5.0
+    area_mm2: 2.0
+  hbm:
+    read_energy_pj_per_byte: 1.0
+    write_energy_pj_per_byte: 2.0
+    read_bandwidth_GBps: 1000.0
+    write_bandwidth_GBps: 1000.0
+    read_latency_ns: 100.0
+    write_latency_ns: 200.0
+    # Off-chip area: reported separately and excluded from on-chip totals.
+    area_mm2: 10.0
+  fabric:
+    read_energy_pj_per_byte: 0.01
+    write_energy_pj_per_byte: 0.01
+    read_bandwidth_GBps: 2000.0
+    write_bandwidth_GBps: 2000.0
+    read_latency_ns: 10.0
+    write_latency_ns: 10.0
+    area_mm2: 1.0
+  kv_cache:
+    max_context_tokens: 8192
+    hbm:
+      value_bytes_per_elem: 1
+      scale_bytes: 2
+      scales_per_token_per_head: 2
+
+analog:
+  xbar_size: 128
+  num_columns_per_adc: 16
+  dac_bits: 4
+  adc:
+    draft_bits: 4
+    residual_bits: 12
+
+  periphery:
+    # Area knobs are per instantiated unit; unit counts are derived from tiling.
+    tia:
+      area_mm2_per_unit: 0.001
+    snh:
+      area_mm2_per_unit: 0.0005
+    mux:
+      area_mm2_per_unit: 0.0002
+    io_buffers:
+      area_mm2_per_unit: 0.0004
+    subarray_switches:
+      area_mm2_per_unit: 0.0001
+    write_drivers:
+      area_mm2_per_unit: 0.0003

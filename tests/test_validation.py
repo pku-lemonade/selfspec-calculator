@@ -141,3 +141,51 @@ analog:
     )
     with pytest.raises(ValueError, match="Available DAC bits"):
         HardwareConfig.from_yaml(path)
+
+
+def test_kv_cache_max_context_tokens_is_optional(tmp_path: Path) -> None:
+    path = tmp_path / "hardware.yaml"
+    path.write_text(
+        """
+reuse_policy: reuse
+library: puma_like_v1
+analog:
+  xbar_size: 128
+  num_columns_per_adc: 16
+  dac_bits: 4
+  adc:
+    draft_bits: 4
+    residual_bits: 12
+memory:
+  kv_cache:
+    hbm:
+      value_bytes_per_elem: 1
+""".lstrip(),
+        encoding="utf-8",
+    )
+    hw = HardwareConfig.from_yaml(path)
+    assert hw.memory is not None
+    assert hw.memory.kv_cache.max_context_tokens is None
+
+    path.write_text(
+        """
+reuse_policy: reuse
+library: puma_like_v1
+analog:
+  xbar_size: 128
+  num_columns_per_adc: 16
+  dac_bits: 4
+  adc:
+    draft_bits: 4
+    residual_bits: 12
+memory:
+  kv_cache:
+    max_context_tokens: 4096
+    hbm:
+      value_bytes_per_elem: 1
+""".lstrip(),
+        encoding="utf-8",
+    )
+    hw = HardwareConfig.from_yaml(path)
+    assert hw.memory is not None
+    assert hw.memory.kv_cache.max_context_tokens == 4096

@@ -200,6 +200,7 @@ class KvCacheFormatKnobs(BaseModel):
 class KvCacheMemoryKnobs(BaseModel):
     hbm: KvCacheFormatKnobs = Field(default_factory=KvCacheFormatKnobs)
     sram: KvCacheFormatKnobs | None = None
+    max_context_tokens: int | None = Field(default=None, ge=0)
 
     def resolved_sram(self) -> KvCacheFormatKnobs:
         return self.sram or self.hbm

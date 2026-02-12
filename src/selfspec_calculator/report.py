@@ -87,6 +87,30 @@ class StageBreakdown(BaseModel):
         raise KeyError(stage)
 
 
+class AreaComponentsMm2(BaseModel):
+    arrays_mm2: float = Field(0.0, ge=0.0)
+    dac_mm2: float = Field(0.0, ge=0.0)
+    adc_draft_mm2: float = Field(0.0, ge=0.0)
+    adc_residual_mm2: float = Field(0.0, ge=0.0)
+
+    tia_mm2: float = Field(0.0, ge=0.0)
+    snh_mm2: float = Field(0.0, ge=0.0)
+    mux_mm2: float = Field(0.0, ge=0.0)
+    io_buffers_mm2: float = Field(0.0, ge=0.0)
+    subarray_switches_mm2: float = Field(0.0, ge=0.0)
+    write_drivers_mm2: float = Field(0.0, ge=0.0)
+
+    sram_mm2: float = Field(0.0, ge=0.0)
+    fabric_mm2: float = Field(0.0, ge=0.0)
+    digital_overhead_mm2: float = Field(0.0, ge=0.0)
+
+
+class AreaBreakdownMm2(BaseModel):
+    on_chip_mm2: float = Field(0.0, ge=0.0)
+    off_chip_hbm_mm2: float = Field(0.0, ge=0.0)
+    on_chip_components: AreaComponentsMm2 = Field(default_factory=AreaComponentsMm2)
+
+
 class ComponentBreakdown(BaseModel):
     arrays_energy_pj: float = 0.0
     arrays_latency_ns: float = 0.0
@@ -301,4 +325,5 @@ class Report(BaseModel):
     points: list[SweepPoint]
     break_even_tokens_per_joule_l_prompt: int | None = None
     area: StageBreakdown
+    area_breakdown_mm2: AreaBreakdownMm2
     notes: list[str] = Field(default_factory=list)
