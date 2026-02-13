@@ -101,6 +101,11 @@ Validation rules:
 - Requested ADC/DAC bit-widths must exist in the selected library.
 - If `library` is omitted, default is `puma_like_v1`.
 
+Paper provenance helper:
+- `HardwareConfig.paper_library_extract("science_adi9405_2024")` returns a machine-readable extraction from the Science paper + supplement in `reference/`.
+- `HardwareConfig.paper_library_missing_specs("science_adi9405_2024")` returns spec paths that are not provided by the paper (for example, missing bit-resolved ADC/DAC tables and `128x128` geometry).
+- This extract is for provenance/gap analysis; it is not a complete runnable estimator library.
+
 ### 2) Legacy explicit-cost (backward compatible)
 
 Keep existing `costs.*` format (see `examples/hardware_legacy.yaml`).

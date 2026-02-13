@@ -387,6 +387,130 @@ class HardwareConfig(BaseModel):
             },
         }
     )
+    PAPER_LIBRARY_EXTRACTS: ClassVar[dict[str, dict[str, Any]]] = {
+        "science_adi9405_2024": {
+            "sources": [
+                "reference/Programming memristor arrays with arbitrarily high precision for analog computing  Science.pdf",
+                "reference/science.adi9405_sm.pdf",
+            ],
+            "notes": [
+                "This extraction includes only values explicitly stated in the paper/supplement, plus closed-form derivations from those values.",
+                "It is not directly runnable as a knob-based estimator library because the paper does not provide many required component specs.",
+            ],
+            "extracted_specs": {
+                "array_geometry": [
+                    {
+                        "platform": "soc_fully_integrated",
+                        "rows": 256,
+                        "cols": 256,
+                        "citation": "Science main text Fig. 2 caption; supplement Fig. S5",
+                    },
+                    {
+                        "platform": "non_fully_integrated",
+                        "rows": 128,
+                        "cols": 64,
+                        "citation": "Science main text (non-fully integrated platform); supplement Fig. S2",
+                    },
+                ],
+                "soc": {
+                    "process_node_nm": 65,
+                    "cores_per_chip": 10,
+                    "citation": "Supplementary Materials and Methods; supplement Fig. S5",
+                },
+                "vmm_operating_point": {
+                    "latency_ns_per_vmm": 10.0,
+                    "average_voltage_v": 0.05,
+                    "average_cell_resistance_ohm": 10_000.0,
+                    "subarrays_used_in_efficiency_example": 5,
+                    "array_efficiency_tops_per_w": 160.0,
+                    "citation": "Supplementary Text energy/time calculation section",
+                },
+                "comparison_assumptions": {
+                    "adc_energy_pj_per_sample_assumed": 1.75,
+                    "hbm_bandwidth_gb_per_s_per_w_assumed": 35.0,
+                    "citation": "Supplementary Text energy/time calculation section",
+                },
+                "derived_for_library_alignment": {
+                    "array_energy_pj_per_cell_activation": 0.0025,
+                    "array_energy_derivation": "V^2/R * t, using V=0.05V, R=10kOhm, t=10ns",
+                    "vmm_energy_pj_for_256x256_with_5_subarrays": 819.2,
+                    "vmm_energy_derivation": "(256*256*5) * (0.05^2/10000) * 10ns",
+                    "derived_from": "Supplementary Text values in vmm_operating_point",
+                },
+            },
+            "missing_specs": [
+                "array_geometry.128x128",
+                "array.area_mm2_per_weight",
+                "array.energy_pj_per_activation_standardized_for_estimator",
+                "array.latency_ns_per_activation_standardized_for_estimator",
+                "adc.bits_available",
+                "adc.energy_pj_per_conversion_by_bits",
+                "adc.latency_ns_per_conversion_by_bits",
+                "adc.area_mm2_per_unit_by_bits",
+                "dac.bits_available",
+                "dac.energy_pj_per_conversion_by_bits",
+                "dac.latency_ns_per_conversion_by_bits",
+                "dac.area_mm2_per_unit_by_bits",
+                "digital.attention.energy_pj_per_mac",
+                "digital.attention.latency_ns_per_mac",
+                "digital.softmax.energy_pj_per_mac",
+                "digital.softmax.latency_ns_per_mac",
+                "digital.elementwise.energy_pj_per_mac",
+                "digital.elementwise.latency_ns_per_mac",
+                "digital.kv_cache.energy_pj_per_mac",
+                "digital.kv_cache.latency_ns_per_mac",
+                "digital.digital_overhead_area_mm2_per_layer",
+                "soc.verify_setup.energy_pj_per_burst",
+                "soc.verify_setup.latency_ns_per_burst",
+                "soc.buffers_add.energy_pj_per_op",
+                "soc.buffers_add.latency_ns_per_op",
+                "soc.buffers_add.area_mm2_per_unit",
+                "soc.control.energy_pj_per_token",
+                "soc.control.latency_ns_per_token",
+                "soc.control.energy_pj_per_burst",
+                "soc.control.latency_ns_per_burst",
+                "memory.sram.read_energy_pj_per_byte",
+                "memory.sram.write_energy_pj_per_byte",
+                "memory.sram.read_bandwidth_GBps",
+                "memory.sram.write_bandwidth_GBps",
+                "memory.sram.read_latency_ns",
+                "memory.sram.write_latency_ns",
+                "memory.sram.area_mm2",
+                "memory.hbm.read_energy_pj_per_byte",
+                "memory.hbm.write_energy_pj_per_byte",
+                "memory.hbm.read_bandwidth_GBps",
+                "memory.hbm.write_bandwidth_GBps",
+                "memory.hbm.read_latency_ns",
+                "memory.hbm.write_latency_ns",
+                "memory.hbm.area_mm2",
+                "memory.fabric.read_energy_pj_per_byte",
+                "memory.fabric.write_energy_pj_per_byte",
+                "memory.fabric.read_bandwidth_GBps",
+                "memory.fabric.write_bandwidth_GBps",
+                "memory.fabric.read_latency_ns",
+                "memory.fabric.write_latency_ns",
+                "memory.fabric.area_mm2",
+                "analog_periphery.tia.energy_pj_per_op",
+                "analog_periphery.tia.latency_ns_per_op",
+                "analog_periphery.tia.area_mm2_per_unit",
+                "analog_periphery.snh.energy_pj_per_op",
+                "analog_periphery.snh.latency_ns_per_op",
+                "analog_periphery.snh.area_mm2_per_unit",
+                "analog_periphery.mux.energy_pj_per_op",
+                "analog_periphery.mux.latency_ns_per_op",
+                "analog_periphery.mux.area_mm2_per_unit",
+                "analog_periphery.io_buffers.energy_pj_per_op",
+                "analog_periphery.io_buffers.latency_ns_per_op",
+                "analog_periphery.io_buffers.area_mm2_per_unit",
+                "analog_periphery.subarray_switches.energy_pj_per_op",
+                "analog_periphery.subarray_switches.latency_ns_per_op",
+                "analog_periphery.subarray_switches.area_mm2_per_unit",
+                "analog_periphery.write_drivers.energy_pj_per_op",
+                "analog_periphery.write_drivers.latency_ns_per_op",
+                "analog_periphery.write_drivers.area_mm2_per_unit",
+            ],
+        }
+    }
 
     @model_validator(mode="after")
     def _validate_mode(self) -> "HardwareConfig":
@@ -522,6 +646,22 @@ class HardwareConfig(BaseModel):
                     mode="json"
                 )
         return payload
+
+    @classmethod
+    def paper_library_extract(cls, name: str = "science_adi9405_2024") -> dict[str, Any]:
+        extract = cls.PAPER_LIBRARY_EXTRACTS.get(name)
+        if extract is None:
+            raise ValueError(
+                f"Unknown paper extract '{name}'. "
+                f"Available: {', '.join(sorted(cls.PAPER_LIBRARY_EXTRACTS))}"
+            )
+        return deepcopy(extract)
+
+    @classmethod
+    def paper_library_missing_specs(cls, name: str = "science_adi9405_2024") -> list[str]:
+        extract = cls.paper_library_extract(name)
+        missing = extract.get("missing_specs", [])
+        return [str(path) for path in missing]
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "HardwareConfig":
