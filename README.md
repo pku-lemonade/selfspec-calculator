@@ -55,29 +55,20 @@ Optional SoC extensions (all optional; default to zero/disabled so older configs
 soc:
   schedule: serialized  # or: layer-pipelined
   verify_setup:
-    energy_pj_per_burst: 0.0
-    latency_ns_per_burst: 0.0
-  buffers_add:
-    energy_pj_per_op: 0.0
-    latency_ns_per_op: 0.0
-  control:
-    energy_pj_per_token: 0.0
-    latency_ns_per_token: 0.0
-    energy_pj_per_burst: 0.0
-    latency_ns_per_burst: 0.0
+    energy_pj_per_burst: 0.0  # optional override (otherwise resolved from library, if available)
+    latency_ns_per_burst: 0.0 # optional override (otherwise resolved from library, if available)
+  buffers_add: {}  # optional override fields (otherwise resolved from library, if available)
+  control: {}      # optional override fields (otherwise resolved from library, if available)
+  # Any field provided here overrides the library (including explicit `0.0`).
 
 memory:
   # Enables bytes-based KV-cache modeling (SRAM buffer + off-chip HBM + fabric).
-  sram:
-    read_energy_pj_per_byte: 0.0
-    write_energy_pj_per_byte: 0.0
-    read_bandwidth_GBps: 0.0
-    write_bandwidth_GBps: 0.0
-    read_latency_ns: 0.0
-    write_latency_ns: 0.0
-    area_mm2: 0.0
-  hbm: { ...same fields... }
-  fabric: { ...same fields... }
+  # PPA coefficients (energy/byte, bandwidth, latency, and optional area) can be provided explicitly,
+  # but are typically resolved from the selected `library` (e.g., `science_soc_v1`).
+  # Any field provided here overrides the library (including explicit `0.0`).
+  sram: {}
+  hbm: {}
+  fabric: {}
   kv_cache:
     # Optional capacity check: enforce `L_prompt + K <= max_context_tokens` during sweeps.
     max_context_tokens: null
@@ -89,18 +80,20 @@ memory:
 
 analog:
   periphery:
-    tia: { energy_pj_per_op: 0.0, latency_ns_per_op: 0.0, area_mm2_per_unit: 0.0 }
-    snh: { energy_pj_per_op: 0.0, latency_ns_per_op: 0.0, area_mm2_per_unit: 0.0 }
-    mux: { energy_pj_per_op: 0.0, latency_ns_per_op: 0.0, area_mm2_per_unit: 0.0 }
-    io_buffers: { energy_pj_per_op: 0.0, latency_ns_per_op: 0.0, area_mm2_per_unit: 0.0 }
-    subarray_switches: { energy_pj_per_op: 0.0, latency_ns_per_op: 0.0, area_mm2_per_unit: 0.0 }
-    write_drivers: { energy_pj_per_op: 0.0, latency_ns_per_op: 0.0, area_mm2_per_unit: 0.0 }
+    # Optional override fields (otherwise resolved from library, if available).
+    # Any field provided here overrides the library (including explicit `0.0`).
+    tia: {}
+    snh: {}
+    mux: {}
+    io_buffers: {}
+    subarray_switches: {}
+    write_drivers: {}
 ```
 
 Examples:
 - `examples/hardware_soc_memory.yaml` (SRAM + HBM + fabric KV-cache model)
 - `examples/hardware_analog_periphery.yaml` (non-zero analog periphery + buffers/control)
-- `examples/hardware_soc_area.yaml` (area knobs: periphery `area_mm2_per_unit`, memory `area_mm2`, off-chip HBM area)
+- `examples/hardware_soc_area.yaml` (component area breakdown; off-chip HBM area reported separately)
 
 Validation rules:
 - `xbar_size`, `num_columns_per_adc`, `dac_bits`, `draft_bits`, and `residual_bits` must be positive integers.

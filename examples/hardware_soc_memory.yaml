@@ -1,29 +1,9 @@
 reuse_policy: reuse
-library: puma_like_v1
+library: science_soc_v1
 
 memory:
   # Bytes-based KV-cache model (Policy B): HBM writes are commit-only.
-  sram:
-    read_energy_pj_per_byte: 0.1
-    write_energy_pj_per_byte: 0.2
-    read_bandwidth_GBps: 2000.0
-    write_bandwidth_GBps: 2000.0
-    read_latency_ns: 5.0
-    write_latency_ns: 5.0
-  hbm:
-    read_energy_pj_per_byte: 1.0
-    write_energy_pj_per_byte: 2.0
-    read_bandwidth_GBps: 1000.0
-    write_bandwidth_GBps: 1000.0
-    read_latency_ns: 100.0
-    write_latency_ns: 200.0
-  fabric:
-    read_energy_pj_per_byte: 0.01
-    write_energy_pj_per_byte: 0.01
-    read_bandwidth_GBps: 2000.0
-    write_bandwidth_GBps: 2000.0
-    read_latency_ns: 10.0
-    write_latency_ns: 10.0
+  # PPA coefficients (energy/byte, bandwidth, latency) are resolved from the selected library.
   kv_cache:
     # INT8 KV with per-head scale metadata in the traffic model.
     hbm:

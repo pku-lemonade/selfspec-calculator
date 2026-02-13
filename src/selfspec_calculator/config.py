@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from enum import Enum
 from pathlib import Path
 from typing import Any, ClassVar
@@ -213,6 +214,18 @@ class MemoryKnobs(BaseModel):
     kv_cache: KvCacheMemoryKnobs = Field(default_factory=KvCacheMemoryKnobs)
 
 
+class MemoryLibraryDefaults(BaseModel):
+    sram: MemoryTechKnobs = Field(default_factory=MemoryTechKnobs)
+    hbm: MemoryTechKnobs = Field(default_factory=MemoryTechKnobs)
+    fabric: MemoryTechKnobs = Field(default_factory=MemoryTechKnobs)
+
+
+class SocLibraryDefaults(BaseModel):
+    verify_setup: VerifySetupKnobs = Field(default_factory=VerifySetupKnobs)
+    buffers_add: PerOpOverheadSpec = Field(default_factory=PerOpOverheadSpec)
+    control: ControlOverheadKnobs = Field(default_factory=ControlOverheadKnobs)
+
+
 class DigitalCostDefaults(BaseModel):
     attention: PerMacCost
     softmax: PerMacCost
@@ -310,6 +323,70 @@ class HardwareConfig(BaseModel):
             },
         },
     }
+    LIBRARIES["science_soc_v1"] = deepcopy(LIBRARIES["puma_like_v1"])
+    LIBRARIES["science_soc_v1"].update(
+        {
+            "soc": {
+                "verify_setup": {"energy_pj_per_burst": 0.0, "latency_ns_per_burst": 0.0},
+                "buffers_add": {"energy_pj_per_op": 0.01, "latency_ns_per_op": 0.02},
+                "control": {
+                    "energy_pj_per_token": 1.0,
+                    "latency_ns_per_token": 2.0,
+                    "energy_pj_per_burst": 0.0,
+                    "latency_ns_per_burst": 0.0,
+                },
+            },
+            "memory": {
+                "sram": {
+                    "read_energy_pj_per_byte": 0.1,
+                    "write_energy_pj_per_byte": 0.2,
+                    "read_bandwidth_GBps": 2000.0,
+                    "write_bandwidth_GBps": 2000.0,
+                    "read_latency_ns": 5.0,
+                    "write_latency_ns": 5.0,
+                    "area_mm2": 2.0,
+                },
+                "hbm": {
+                    "read_energy_pj_per_byte": 1.0,
+                    "write_energy_pj_per_byte": 2.0,
+                    "read_bandwidth_GBps": 1000.0,
+                    "write_bandwidth_GBps": 1000.0,
+                    "read_latency_ns": 100.0,
+                    "write_latency_ns": 200.0,
+                    "area_mm2": 10.0,
+                },
+                "fabric": {
+                    "read_energy_pj_per_byte": 0.01,
+                    "write_energy_pj_per_byte": 0.01,
+                    "read_bandwidth_GBps": 2000.0,
+                    "write_bandwidth_GBps": 2000.0,
+                    "read_latency_ns": 10.0,
+                    "write_latency_ns": 10.0,
+                    "area_mm2": 1.0,
+                },
+            },
+            "analog_periphery": {
+                "tia": {"energy_pj_per_op": 0.001, "latency_ns_per_op": 0.002, "area_mm2_per_unit": 0.001},
+                "snh": {"energy_pj_per_op": 0.0005, "latency_ns_per_op": 0.001, "area_mm2_per_unit": 0.0005},
+                "mux": {"energy_pj_per_op": 0.0002, "latency_ns_per_op": 0.0003, "area_mm2_per_unit": 0.0002},
+                "io_buffers": {
+                    "energy_pj_per_op": 0.0004,
+                    "latency_ns_per_op": 0.0005,
+                    "area_mm2_per_unit": 0.0004,
+                },
+                "subarray_switches": {
+                    "energy_pj_per_op": 0.0001,
+                    "latency_ns_per_op": 0.0002,
+                    "area_mm2_per_unit": 0.0001,
+                },
+                "write_drivers": {
+                    "energy_pj_per_op": 0.0003,
+                    "latency_ns_per_op": 0.0004,
+                    "area_mm2_per_unit": 0.0003,
+                },
+            },
+        }
+    )
 
     @model_validator(mode="after")
     def _validate_mode(self) -> "HardwareConfig":
@@ -321,7 +398,50 @@ class HardwareConfig(BaseModel):
             raise ValueError("hardware config must provide either analog.* knobs or legacy costs.*")
         if has_analog:
             self.resolve_knob_specs()
+            self._apply_library_defaults()
         return self
+
+    def _apply_library_defaults(self) -> None:
+        lib = self.LIBRARIES.get(self.selected_library)
+        if lib is None:
+            return
+
+        soc_defaults = SocLibraryDefaults.model_validate(lib.get("soc", {}))
+        for field in ["energy_pj_per_burst", "latency_ns_per_burst"]:
+            if field not in self.soc.verify_setup.model_fields_set:
+                setattr(self.soc.verify_setup, field, getattr(soc_defaults.verify_setup, field))
+        for field in ["energy_pj_per_op", "latency_ns_per_op", "area_mm2_per_unit"]:
+            if field not in self.soc.buffers_add.model_fields_set:
+                setattr(self.soc.buffers_add, field, getattr(soc_defaults.buffers_add, field))
+        for field in ["energy_pj_per_token", "latency_ns_per_token", "energy_pj_per_burst", "latency_ns_per_burst"]:
+            if field not in self.soc.control.model_fields_set:
+                setattr(self.soc.control, field, getattr(soc_defaults.control, field))
+
+        assert self.analog is not None
+        periphery_defaults = AnalogPeripheryKnobs.model_validate(lib.get("analog_periphery", {}))
+        for name in ["tia", "snh", "mux", "io_buffers", "subarray_switches", "write_drivers"]:
+            cur_spec = getattr(self.analog.periphery, name)
+            def_spec = getattr(periphery_defaults, name)
+            for field in ["energy_pj_per_op", "latency_ns_per_op", "area_mm2_per_unit"]:
+                if field not in cur_spec.model_fields_set:
+                    setattr(cur_spec, field, getattr(def_spec, field))
+
+        if self.memory is not None:
+            memory_defaults = MemoryLibraryDefaults.model_validate(lib.get("memory", {}))
+            for name in ["sram", "hbm", "fabric"]:
+                cur_tech = getattr(self.memory, name)
+                def_tech = getattr(memory_defaults, name)
+                for field in [
+                    "read_energy_pj_per_byte",
+                    "write_energy_pj_per_byte",
+                    "read_bandwidth_GBps",
+                    "write_bandwidth_GBps",
+                    "read_latency_ns",
+                    "write_latency_ns",
+                    "area_mm2",
+                ]:
+                    if field not in cur_tech.model_fields_set:
+                        setattr(cur_tech, field, getattr(def_tech, field))
 
     @property
     def mode(self) -> HardwareMode:
@@ -385,12 +505,23 @@ class HardwareConfig(BaseModel):
         if self.mode != HardwareMode.knob_based:
             return None
         specs = self.resolve_knob_specs()
-        return {
+        payload: dict[str, Any] = {
             "name": specs.library,
             "dac": {"bits": specs.dac_bits, **specs.dac.model_dump(mode="json")},
             "adc_draft": {"bits": specs.adc_draft_bits, **specs.adc_draft.model_dump(mode="json")},
             "adc_residual": {"bits": specs.adc_residual_bits, **specs.adc_residual.model_dump(mode="json")},
         }
+        lib = self.LIBRARIES.get(specs.library)
+        if lib is not None:
+            if "soc" in lib:
+                payload["soc"] = SocLibraryDefaults.model_validate(lib["soc"]).model_dump(mode="json")
+            if "memory" in lib:
+                payload["memory"] = MemoryLibraryDefaults.model_validate(lib["memory"]).model_dump(mode="json")
+            if "analog_periphery" in lib:
+                payload["analog_periphery"] = AnalogPeripheryKnobs.model_validate(lib["analog_periphery"]).model_dump(
+                    mode="json"
+                )
+        return payload
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "HardwareConfig":

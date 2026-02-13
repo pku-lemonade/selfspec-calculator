@@ -1,13 +1,5 @@
 reuse_policy: reuse
-library: puma_like_v1
-
-soc:
-  buffers_add:
-    energy_pj_per_op: 0.01
-    latency_ns_per_op: 0.02
-  control:
-    energy_pj_per_token: 1.0
-    latency_ns_per_token: 2.0
+library: science_soc_v1
 
 analog:
   xbar_size: 128
@@ -16,23 +8,3 @@ analog:
   adc:
     draft_bits: 4
     residual_bits: 12
-
-  periphery:
-    tia:
-      energy_pj_per_op: 0.001
-      latency_ns_per_op: 0.002
-    snh:
-      energy_pj_per_op: 0.0005
-      latency_ns_per_op: 0.001
-    mux:
-      energy_pj_per_op: 0.0002
-      latency_ns_per_op: 0.0003
-    io_buffers:
-      energy_pj_per_op: 0.0004
-      latency_ns_per_op: 0.0005
-    subarray_switches:
-      energy_pj_per_op: 0.0001
-      latency_ns_per_op: 0.0002
-    write_drivers:
-      energy_pj_per_op: 0.0003
-      latency_ns_per_op: 0.0004
