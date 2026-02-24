@@ -39,6 +39,9 @@ The tool supports two mutually exclusive formats.
 ```yaml
 reuse_policy: reuse
 library: puma_like_v1
+# Optional: load libraries from a custom JSON file.
+# If omitted, packaged default libraries are used.
+library_file: library_custom_minimal.json
 
 analog:
   xbar_size: 128
@@ -94,12 +97,20 @@ Examples:
 - `examples/hardware_soc_memory.yaml` (SRAM + HBM + fabric KV-cache model)
 - `examples/hardware_analog_periphery.yaml` (non-zero analog periphery + buffers/control)
 - `examples/hardware_soc_area.yaml` (component area breakdown; off-chip HBM area reported separately)
+- `examples/hardware_custom_library.yaml` (custom JSON library source via `library_file`)
 
 Validation rules:
 - `xbar_size`, `num_columns_per_adc`, `dac_bits`, `draft_bits`, and `residual_bits` must be positive integers.
 - `xbar_size % num_columns_per_adc == 0`.
 - Requested ADC/DAC bit-widths must exist in the selected library.
 - If `library` is omitted, default is `puma_like_v1`.
+- `library_file` path handling:
+  - if absolute, it is used as-is;
+  - if relative, it is resolved relative to the `hardware.yaml` file location.
+- Library source precedence:
+  - if `library_file` is set, libraries are loaded only from that JSON file;
+  - otherwise, packaged default libraries are used.
+- Invalid custom library files fail fast with explicit errors (for example: file not found, malformed JSON, missing required sections like `adc/dac/array/digital`).
 
 Paper provenance helper:
 - `HardwareConfig.paper_library_extract("science_adi9405_2024")` returns a machine-readable extraction from the Science paper + supplement in `reference/`.

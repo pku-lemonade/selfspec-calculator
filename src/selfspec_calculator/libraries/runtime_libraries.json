@@ -1,0 +1,394 @@
+{
+  "puma_like_v1": {
+    "adc": {
+      "3": {
+        "area_mm2_per_unit": 0.0012,
+        "energy_pj_per_conversion": 0.07,
+        "latency_ns_per_conversion": 0.03
+      },
+      "4": {
+        "area_mm2_per_unit": 0.0012,
+        "energy_pj_per_conversion": 0.09,
+        "latency_ns_per_conversion": 0.04
+      },
+      "5": {
+        "area_mm2_per_unit": 0.0013,
+        "energy_pj_per_conversion": 0.11,
+        "latency_ns_per_conversion": 0.05
+      },
+      "8": {
+        "area_mm2_per_unit": 0.0015,
+        "energy_pj_per_conversion": 0.18,
+        "latency_ns_per_conversion": 0.08
+      },
+      "10": {
+        "area_mm2_per_unit": 0.0017,
+        "energy_pj_per_conversion": 0.26,
+        "latency_ns_per_conversion": 0.1
+      },
+      "11": {
+        "area_mm2_per_unit": 0.0018,
+        "energy_pj_per_conversion": 0.31,
+        "latency_ns_per_conversion": 0.11
+      },
+      "12": {
+        "area_mm2_per_unit": 0.0019,
+        "energy_pj_per_conversion": 0.37,
+        "latency_ns_per_conversion": 0.12
+      },
+      "13": {
+        "area_mm2_per_unit": 0.002,
+        "energy_pj_per_conversion": 0.44,
+        "latency_ns_per_conversion": 0.135
+      },
+      "16": {
+        "area_mm2_per_unit": 0.0024,
+        "energy_pj_per_conversion": 0.66,
+        "latency_ns_per_conversion": 0.18
+      }
+    },
+    "array": {
+      "area_mm2_per_weight": 1e-09,
+      "energy_pj_per_activation": 0.0022,
+      "latency_ns_per_activation": 0.015
+    },
+    "dac": {
+      "1": {
+        "area_mm2_per_unit": 1.67e-07,
+        "energy_pj_per_conversion": 0.0035,
+        "latency_ns_per_conversion": 0.01
+      },
+      "2": {
+        "area_mm2_per_unit": 1.67e-07,
+        "energy_pj_per_conversion": 0.0037,
+        "latency_ns_per_conversion": 0.01
+      },
+      "4": {
+        "area_mm2_per_unit": 1.67e-07,
+        "energy_pj_per_conversion": 0.004,
+        "latency_ns_per_conversion": 0.01
+      },
+      "8": {
+        "area_mm2_per_unit": 1.67e-07,
+        "energy_pj_per_conversion": 0.0045,
+        "latency_ns_per_conversion": 0.01
+      },
+      "12": {
+        "area_mm2_per_unit": 1.67e-07,
+        "energy_pj_per_conversion": 0.005,
+        "latency_ns_per_conversion": 0.01
+      },
+      "16": {
+        "area_mm2_per_unit": 1.67e-07,
+        "energy_pj_per_conversion": 0.0055,
+        "latency_ns_per_conversion": 0.01
+      }
+    },
+    "digital": {
+      "attention": {
+        "energy_pj_per_mac": 0.0004,
+        "latency_ns_per_mac": 0.0007
+      },
+      "digital_overhead_area_mm2_per_layer": 0.01,
+      "elementwise": {
+        "energy_pj_per_mac": 2e-05,
+        "latency_ns_per_mac": 2e-05
+      },
+      "kv_cache": {
+        "energy_pj_per_mac": 0.0001,
+        "latency_ns_per_mac": 0.0001
+      },
+      "softmax": {
+        "energy_pj_per_mac": 5e-05,
+        "latency_ns_per_mac": 5e-05
+      }
+    }
+  },
+  "puma_like_v2": {
+    "adc": {
+      "3": {
+        "area_mm2_per_unit": 0.0011,
+        "energy_pj_per_conversion": 0.06,
+        "latency_ns_per_conversion": 0.028
+      },
+      "4": {
+        "area_mm2_per_unit": 0.0011,
+        "energy_pj_per_conversion": 0.08,
+        "latency_ns_per_conversion": 0.036
+      },
+      "5": {
+        "area_mm2_per_unit": 0.0012,
+        "energy_pj_per_conversion": 0.1,
+        "latency_ns_per_conversion": 0.045
+      },
+      "8": {
+        "area_mm2_per_unit": 0.0014,
+        "energy_pj_per_conversion": 0.16,
+        "latency_ns_per_conversion": 0.072
+      },
+      "10": {
+        "area_mm2_per_unit": 0.0016,
+        "energy_pj_per_conversion": 0.23,
+        "latency_ns_per_conversion": 0.092
+      },
+      "11": {
+        "area_mm2_per_unit": 0.0017,
+        "energy_pj_per_conversion": 0.27,
+        "latency_ns_per_conversion": 0.102
+      },
+      "12": {
+        "area_mm2_per_unit": 0.0018,
+        "energy_pj_per_conversion": 0.33,
+        "latency_ns_per_conversion": 0.113
+      },
+      "13": {
+        "area_mm2_per_unit": 0.0019,
+        "energy_pj_per_conversion": 0.39,
+        "latency_ns_per_conversion": 0.124
+      },
+      "16": {
+        "area_mm2_per_unit": 0.0022,
+        "energy_pj_per_conversion": 0.59,
+        "latency_ns_per_conversion": 0.166
+      }
+    },
+    "array": {
+      "area_mm2_per_weight": 9e-10,
+      "energy_pj_per_activation": 0.0019,
+      "latency_ns_per_activation": 0.013
+    },
+    "dac": {
+      "1": {
+        "area_mm2_per_unit": 1.5e-07,
+        "energy_pj_per_conversion": 0.0032,
+        "latency_ns_per_conversion": 0.009
+      },
+      "2": {
+        "area_mm2_per_unit": 1.5e-07,
+        "energy_pj_per_conversion": 0.0034,
+        "latency_ns_per_conversion": 0.009
+      },
+      "4": {
+        "area_mm2_per_unit": 1.5e-07,
+        "energy_pj_per_conversion": 0.0037,
+        "latency_ns_per_conversion": 0.009
+      },
+      "8": {
+        "area_mm2_per_unit": 1.5e-07,
+        "energy_pj_per_conversion": 0.0042,
+        "latency_ns_per_conversion": 0.009
+      },
+      "12": {
+        "area_mm2_per_unit": 1.5e-07,
+        "energy_pj_per_conversion": 0.0047,
+        "latency_ns_per_conversion": 0.009
+      },
+      "16": {
+        "area_mm2_per_unit": 1.5e-07,
+        "energy_pj_per_conversion": 0.0052,
+        "latency_ns_per_conversion": 0.009
+      }
+    },
+    "digital": {
+      "attention": {
+        "energy_pj_per_mac": 0.00035,
+        "latency_ns_per_mac": 0.0006
+      },
+      "digital_overhead_area_mm2_per_layer": 0.009,
+      "elementwise": {
+        "energy_pj_per_mac": 1.8e-05,
+        "latency_ns_per_mac": 1.8e-05
+      },
+      "kv_cache": {
+        "energy_pj_per_mac": 9e-05,
+        "latency_ns_per_mac": 9e-05
+      },
+      "softmax": {
+        "energy_pj_per_mac": 4.5e-05,
+        "latency_ns_per_mac": 4.5e-05
+      }
+    }
+  },
+  "science_soc_v1": {
+    "adc": {
+      "3": {
+        "area_mm2_per_unit": 0.0012,
+        "energy_pj_per_conversion": 0.07,
+        "latency_ns_per_conversion": 0.03
+      },
+      "4": {
+        "area_mm2_per_unit": 0.0012,
+        "energy_pj_per_conversion": 0.09,
+        "latency_ns_per_conversion": 0.04
+      },
+      "5": {
+        "area_mm2_per_unit": 0.0013,
+        "energy_pj_per_conversion": 0.11,
+        "latency_ns_per_conversion": 0.05
+      },
+      "8": {
+        "area_mm2_per_unit": 0.0015,
+        "energy_pj_per_conversion": 0.18,
+        "latency_ns_per_conversion": 0.08
+      },
+      "10": {
+        "area_mm2_per_unit": 0.0017,
+        "energy_pj_per_conversion": 0.26,
+        "latency_ns_per_conversion": 0.1
+      },
+      "11": {
+        "area_mm2_per_unit": 0.0018,
+        "energy_pj_per_conversion": 0.31,
+        "latency_ns_per_conversion": 0.11
+      },
+      "12": {
+        "area_mm2_per_unit": 0.0019,
+        "energy_pj_per_conversion": 0.37,
+        "latency_ns_per_conversion": 0.12
+      },
+      "13": {
+        "area_mm2_per_unit": 0.002,
+        "energy_pj_per_conversion": 0.44,
+        "latency_ns_per_conversion": 0.135
+      },
+      "16": {
+        "area_mm2_per_unit": 0.0024,
+        "energy_pj_per_conversion": 0.66,
+        "latency_ns_per_conversion": 0.18
+      }
+    },
+    "analog_periphery": {
+      "io_buffers": {
+        "area_mm2_per_unit": 0.0004,
+        "energy_pj_per_op": 0.0004,
+        "latency_ns_per_op": 0.0005
+      },
+      "mux": {
+        "area_mm2_per_unit": 0.0002,
+        "energy_pj_per_op": 0.0002,
+        "latency_ns_per_op": 0.0003
+      },
+      "snh": {
+        "area_mm2_per_unit": 0.0005,
+        "energy_pj_per_op": 0.0005,
+        "latency_ns_per_op": 0.001
+      },
+      "subarray_switches": {
+        "area_mm2_per_unit": 0.0001,
+        "energy_pj_per_op": 0.0001,
+        "latency_ns_per_op": 0.0002
+      },
+      "tia": {
+        "area_mm2_per_unit": 0.001,
+        "energy_pj_per_op": 0.001,
+        "latency_ns_per_op": 0.002
+      },
+      "write_drivers": {
+        "area_mm2_per_unit": 0.0003,
+        "energy_pj_per_op": 0.0003,
+        "latency_ns_per_op": 0.0004
+      }
+    },
+    "array": {
+      "area_mm2_per_weight": 1e-09,
+      "energy_pj_per_activation": 0.0022,
+      "latency_ns_per_activation": 0.015
+    },
+    "dac": {
+      "1": {
+        "area_mm2_per_unit": 1.67e-07,
+        "energy_pj_per_conversion": 0.0035,
+        "latency_ns_per_conversion": 0.01
+      },
+      "2": {
+        "area_mm2_per_unit": 1.67e-07,
+        "energy_pj_per_conversion": 0.0037,
+        "latency_ns_per_conversion": 0.01
+      },
+      "4": {
+        "area_mm2_per_unit": 1.67e-07,
+        "energy_pj_per_conversion": 0.004,
+        "latency_ns_per_conversion": 0.01
+      },
+      "8": {
+        "area_mm2_per_unit": 1.67e-07,
+        "energy_pj_per_conversion": 0.0045,
+        "latency_ns_per_conversion": 0.01
+      },
+      "12": {
+        "area_mm2_per_unit": 1.67e-07,
+        "energy_pj_per_conversion": 0.005,
+        "latency_ns_per_conversion": 0.01
+      },
+      "16": {
+        "area_mm2_per_unit": 1.67e-07,
+        "energy_pj_per_conversion": 0.0055,
+        "latency_ns_per_conversion": 0.01
+      }
+    },
+    "digital": {
+      "attention": {
+        "energy_pj_per_mac": 0.0004,
+        "latency_ns_per_mac": 0.0007
+      },
+      "digital_overhead_area_mm2_per_layer": 0.01,
+      "elementwise": {
+        "energy_pj_per_mac": 2e-05,
+        "latency_ns_per_mac": 2e-05
+      },
+      "kv_cache": {
+        "energy_pj_per_mac": 0.0001,
+        "latency_ns_per_mac": 0.0001
+      },
+      "softmax": {
+        "energy_pj_per_mac": 5e-05,
+        "latency_ns_per_mac": 5e-05
+      }
+    },
+    "memory": {
+      "fabric": {
+        "area_mm2": 1.0,
+        "read_bandwidth_GBps": 2000.0,
+        "read_energy_pj_per_byte": 0.01,
+        "read_latency_ns": 10.0,
+        "write_bandwidth_GBps": 2000.0,
+        "write_energy_pj_per_byte": 0.01,
+        "write_latency_ns": 10.0
+      },
+      "hbm": {
+        "area_mm2": 10.0,
+        "read_bandwidth_GBps": 1000.0,
+        "read_energy_pj_per_byte": 1.0,
+        "read_latency_ns": 100.0,
+        "write_bandwidth_GBps": 1000.0,
+        "write_energy_pj_per_byte": 2.0,
+        "write_latency_ns": 200.0
+      },
+      "sram": {
+        "area_mm2": 2.0,
+        "read_bandwidth_GBps": 2000.0,
+        "read_energy_pj_per_byte": 0.1,
+        "read_latency_ns": 5.0,
+        "write_bandwidth_GBps": 2000.0,
+        "write_energy_pj_per_byte": 0.2,
+        "write_latency_ns": 5.0
+      }
+    },
+    "soc": {
+      "buffers_add": {
+        "energy_pj_per_op": 0.01,
+        "latency_ns_per_op": 0.02
+      },
+      "control": {
+        "energy_pj_per_burst": 0.0,
+        "energy_pj_per_token": 1.0,
+        "latency_ns_per_burst": 0.0,
+        "latency_ns_per_token": 2.0
+      },
+      "verify_setup": {
+        "energy_pj_per_burst": 0.0,
+        "latency_ns_per_burst": 0.0
+      }
+    }
+  }
+}

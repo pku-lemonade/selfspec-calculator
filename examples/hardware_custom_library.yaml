@@ -1,0 +1,11 @@
+reuse_policy: reuse
+library: puma_like_v1
+library_file: library_custom_minimal.json
+
+analog:
+  xbar_size: 128
+  num_columns_per_adc: 16
+  dac_bits: 4
+  adc:
+    draft_bits: 4
+    residual_bits: 12

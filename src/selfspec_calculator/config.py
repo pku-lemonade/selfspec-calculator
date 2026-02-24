@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from enum import Enum
+import json
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -249,144 +250,17 @@ class ResolvedKnobSpecs(BaseModel):
 class HardwareConfig(BaseModel):
     reuse_policy: ReusePolicy = ReusePolicy.reuse
     library: str | None = None
+    library_file: str | None = None
     soc: SocKnobs = Field(default_factory=SocKnobs)
     memory: MemoryKnobs | None = None
     analog: AnalogKnobs | None = None
     costs: HardwareCosts | None = None
 
     DEFAULT_LIBRARY: ClassVar[str] = "puma_like_v1"
-    LIBRARIES: ClassVar[dict[str, dict[str, Any]]] = {
-        "puma_like_v1": {
-            "adc": {
-                3: {"energy_pj_per_conversion": 0.07, "latency_ns_per_conversion": 0.030, "area_mm2_per_unit": 0.0012},
-                4: {"energy_pj_per_conversion": 0.09, "latency_ns_per_conversion": 0.040, "area_mm2_per_unit": 0.0012},
-                5: {"energy_pj_per_conversion": 0.11, "latency_ns_per_conversion": 0.050, "area_mm2_per_unit": 0.0013},
-                8: {"energy_pj_per_conversion": 0.18, "latency_ns_per_conversion": 0.080, "area_mm2_per_unit": 0.0015},
-                10: {"energy_pj_per_conversion": 0.26, "latency_ns_per_conversion": 0.100, "area_mm2_per_unit": 0.0017},
-                11: {"energy_pj_per_conversion": 0.31, "latency_ns_per_conversion": 0.110, "area_mm2_per_unit": 0.0018},
-                12: {"energy_pj_per_conversion": 0.37, "latency_ns_per_conversion": 0.120, "area_mm2_per_unit": 0.0019},
-                13: {"energy_pj_per_conversion": 0.44, "latency_ns_per_conversion": 0.135, "area_mm2_per_unit": 0.0020},
-                16: {"energy_pj_per_conversion": 0.66, "latency_ns_per_conversion": 0.180, "area_mm2_per_unit": 0.0024},
-            },
-            "dac": {
-                1: {"energy_pj_per_conversion": 0.0035, "latency_ns_per_conversion": 0.010, "area_mm2_per_unit": 1.67e-7},
-                2: {"energy_pj_per_conversion": 0.0037, "latency_ns_per_conversion": 0.010, "area_mm2_per_unit": 1.67e-7},
-                4: {"energy_pj_per_conversion": 0.0040, "latency_ns_per_conversion": 0.010, "area_mm2_per_unit": 1.67e-7},
-                8: {"energy_pj_per_conversion": 0.0045, "latency_ns_per_conversion": 0.010, "area_mm2_per_unit": 1.67e-7},
-                12: {"energy_pj_per_conversion": 0.0050, "latency_ns_per_conversion": 0.010, "area_mm2_per_unit": 1.67e-7},
-                16: {"energy_pj_per_conversion": 0.0055, "latency_ns_per_conversion": 0.010, "area_mm2_per_unit": 1.67e-7},
-            },
-            "array": {
-                "energy_pj_per_activation": 0.0022,
-                "latency_ns_per_activation": 0.015,
-                "area_mm2_per_weight": 1.0e-9,
-            },
-            "digital": {
-                "attention": {"energy_pj_per_mac": 0.0004, "latency_ns_per_mac": 0.0007},
-                "softmax": {"energy_pj_per_mac": 0.00005, "latency_ns_per_mac": 0.00005},
-                "elementwise": {"energy_pj_per_mac": 0.00002, "latency_ns_per_mac": 0.00002},
-                "kv_cache": {"energy_pj_per_mac": 0.0001, "latency_ns_per_mac": 0.0001},
-                "digital_overhead_area_mm2_per_layer": 0.01,
-            },
-        },
-        "puma_like_v2": {
-            "adc": {
-                3: {"energy_pj_per_conversion": 0.06, "latency_ns_per_conversion": 0.028, "area_mm2_per_unit": 0.0011},
-                4: {"energy_pj_per_conversion": 0.08, "latency_ns_per_conversion": 0.036, "area_mm2_per_unit": 0.0011},
-                5: {"energy_pj_per_conversion": 0.10, "latency_ns_per_conversion": 0.045, "area_mm2_per_unit": 0.0012},
-                8: {"energy_pj_per_conversion": 0.16, "latency_ns_per_conversion": 0.072, "area_mm2_per_unit": 0.0014},
-                10: {"energy_pj_per_conversion": 0.23, "latency_ns_per_conversion": 0.092, "area_mm2_per_unit": 0.0016},
-                11: {"energy_pj_per_conversion": 0.27, "latency_ns_per_conversion": 0.102, "area_mm2_per_unit": 0.0017},
-                12: {"energy_pj_per_conversion": 0.33, "latency_ns_per_conversion": 0.113, "area_mm2_per_unit": 0.0018},
-                13: {"energy_pj_per_conversion": 0.39, "latency_ns_per_conversion": 0.124, "area_mm2_per_unit": 0.0019},
-                16: {"energy_pj_per_conversion": 0.59, "latency_ns_per_conversion": 0.166, "area_mm2_per_unit": 0.0022},
-            },
-            "dac": {
-                1: {"energy_pj_per_conversion": 0.0032, "latency_ns_per_conversion": 0.009, "area_mm2_per_unit": 1.50e-7},
-                2: {"energy_pj_per_conversion": 0.0034, "latency_ns_per_conversion": 0.009, "area_mm2_per_unit": 1.50e-7},
-                4: {"energy_pj_per_conversion": 0.0037, "latency_ns_per_conversion": 0.009, "area_mm2_per_unit": 1.50e-7},
-                8: {"energy_pj_per_conversion": 0.0042, "latency_ns_per_conversion": 0.009, "area_mm2_per_unit": 1.50e-7},
-                12: {"energy_pj_per_conversion": 0.0047, "latency_ns_per_conversion": 0.009, "area_mm2_per_unit": 1.50e-7},
-                16: {"energy_pj_per_conversion": 0.0052, "latency_ns_per_conversion": 0.009, "area_mm2_per_unit": 1.50e-7},
-            },
-            "array": {
-                "energy_pj_per_activation": 0.0019,
-                "latency_ns_per_activation": 0.013,
-                "area_mm2_per_weight": 9.0e-10,
-            },
-            "digital": {
-                "attention": {"energy_pj_per_mac": 0.00035, "latency_ns_per_mac": 0.00060},
-                "softmax": {"energy_pj_per_mac": 0.000045, "latency_ns_per_mac": 0.000045},
-                "elementwise": {"energy_pj_per_mac": 0.000018, "latency_ns_per_mac": 0.000018},
-                "kv_cache": {"energy_pj_per_mac": 0.00009, "latency_ns_per_mac": 0.00009},
-                "digital_overhead_area_mm2_per_layer": 0.009,
-            },
-        },
-    }
-    LIBRARIES["science_soc_v1"] = deepcopy(LIBRARIES["puma_like_v1"])
-    LIBRARIES["science_soc_v1"].update(
-        {
-            "soc": {
-                "verify_setup": {"energy_pj_per_burst": 0.0, "latency_ns_per_burst": 0.0},
-                "buffers_add": {"energy_pj_per_op": 0.01, "latency_ns_per_op": 0.02},
-                "control": {
-                    "energy_pj_per_token": 1.0,
-                    "latency_ns_per_token": 2.0,
-                    "energy_pj_per_burst": 0.0,
-                    "latency_ns_per_burst": 0.0,
-                },
-            },
-            "memory": {
-                "sram": {
-                    "read_energy_pj_per_byte": 0.1,
-                    "write_energy_pj_per_byte": 0.2,
-                    "read_bandwidth_GBps": 2000.0,
-                    "write_bandwidth_GBps": 2000.0,
-                    "read_latency_ns": 5.0,
-                    "write_latency_ns": 5.0,
-                    "area_mm2": 2.0,
-                },
-                "hbm": {
-                    "read_energy_pj_per_byte": 1.0,
-                    "write_energy_pj_per_byte": 2.0,
-                    "read_bandwidth_GBps": 1000.0,
-                    "write_bandwidth_GBps": 1000.0,
-                    "read_latency_ns": 100.0,
-                    "write_latency_ns": 200.0,
-                    "area_mm2": 10.0,
-                },
-                "fabric": {
-                    "read_energy_pj_per_byte": 0.01,
-                    "write_energy_pj_per_byte": 0.01,
-                    "read_bandwidth_GBps": 2000.0,
-                    "write_bandwidth_GBps": 2000.0,
-                    "read_latency_ns": 10.0,
-                    "write_latency_ns": 10.0,
-                    "area_mm2": 1.0,
-                },
-            },
-            "analog_periphery": {
-                "tia": {"energy_pj_per_op": 0.001, "latency_ns_per_op": 0.002, "area_mm2_per_unit": 0.001},
-                "snh": {"energy_pj_per_op": 0.0005, "latency_ns_per_op": 0.001, "area_mm2_per_unit": 0.0005},
-                "mux": {"energy_pj_per_op": 0.0002, "latency_ns_per_op": 0.0003, "area_mm2_per_unit": 0.0002},
-                "io_buffers": {
-                    "energy_pj_per_op": 0.0004,
-                    "latency_ns_per_op": 0.0005,
-                    "area_mm2_per_unit": 0.0004,
-                },
-                "subarray_switches": {
-                    "energy_pj_per_op": 0.0001,
-                    "latency_ns_per_op": 0.0002,
-                    "area_mm2_per_unit": 0.0001,
-                },
-                "write_drivers": {
-                    "energy_pj_per_op": 0.0003,
-                    "latency_ns_per_op": 0.0004,
-                    "area_mm2_per_unit": 0.0003,
-                },
-            },
-        }
+    RUNTIME_LIBRARY_DEFAULT_FILE: ClassVar[Path] = (
+        Path(__file__).resolve().parent / "libraries" / "runtime_libraries.json"
     )
+    REQUIRED_LIBRARY_SECTIONS: ClassVar[tuple[str, ...]] = ("adc", "dac", "array", "digital")
     PAPER_LIBRARY_EXTRACTS: ClassVar[dict[str, dict[str, Any]]] = {
         "science_adi9405_2024": {
             "sources": [
@@ -512,6 +386,94 @@ class HardwareConfig(BaseModel):
         }
     }
 
+    @classmethod
+    def _normalize_bit_table(
+        cls,
+        table: Any,
+        *,
+        library_name: str,
+        section: str,
+        source: str,
+    ) -> dict[int, dict[str, Any]]:
+        if not isinstance(table, dict):
+            raise ValueError(
+                f"Invalid library '{library_name}' in '{source}': section '{section}' must be a JSON object"
+            )
+        normalized: dict[int, dict[str, Any]] = {}
+        for raw_bits, raw_spec in table.items():
+            try:
+                bits = int(raw_bits)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"Invalid library '{library_name}' in '{source}': section '{section}' has non-integer bit key "
+                    f"{raw_bits!r}"
+                ) from exc
+            if bits <= 0:
+                raise ValueError(
+                    f"Invalid library '{library_name}' in '{source}': section '{section}' has non-positive bit key {bits}"
+                )
+            if not isinstance(raw_spec, dict):
+                raise ValueError(
+                    f"Invalid library '{library_name}' in '{source}': section '{section}' bit {bits} must map to an object"
+                )
+            normalized[bits] = deepcopy(raw_spec)
+        return normalized
+
+    @classmethod
+    def _normalize_runtime_libraries(cls, payload: Any, *, source: str) -> dict[str, dict[str, Any]]:
+        if not isinstance(payload, dict):
+            raise ValueError(f"Invalid library source '{source}': top-level JSON must be an object")
+
+        normalized_payload: dict[str, dict[str, Any]] = {}
+        for library_name, library_spec in payload.items():
+            if not isinstance(library_name, str) or not library_name:
+                raise ValueError(
+                    f"Invalid library source '{source}': library names must be non-empty strings (got {library_name!r})"
+                )
+            if not isinstance(library_spec, dict):
+                raise ValueError(
+                    f"Invalid library '{library_name}' in '{source}': library definition must be an object"
+                )
+
+            missing = [section for section in cls.REQUIRED_LIBRARY_SECTIONS if section not in library_spec]
+            if missing:
+                raise ValueError(
+                    f"Invalid library '{library_name}' in '{source}': missing required sections: {', '.join(missing)}"
+                )
+
+            normalized_spec = deepcopy(library_spec)
+            normalized_spec["adc"] = cls._normalize_bit_table(
+                library_spec.get("adc"),
+                library_name=library_name,
+                section="adc",
+                source=source,
+            )
+            normalized_spec["dac"] = cls._normalize_bit_table(
+                library_spec.get("dac"),
+                library_name=library_name,
+                section="dac",
+                source=source,
+            )
+            normalized_payload[library_name] = normalized_spec
+
+        return normalized_payload
+
+    @classmethod
+    def _load_runtime_libraries(cls, library_file: str | None) -> dict[str, dict[str, Any]]:
+        path = cls.RUNTIME_LIBRARY_DEFAULT_FILE if library_file is None else Path(library_file)
+        if not path.exists():
+            raise ValueError(f"Library source file not found: {path}")
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"Invalid library JSON in '{path}': {exc.msg} at line {exc.lineno}, column {exc.colno}"
+            ) from exc
+        return cls._normalize_runtime_libraries(raw, source=str(path))
+
+    def runtime_libraries(self) -> dict[str, dict[str, Any]]:
+        return self._load_runtime_libraries(self.library_file)
+
     @model_validator(mode="after")
     def _validate_mode(self) -> "HardwareConfig":
         has_analog = self.analog is not None
@@ -526,7 +488,7 @@ class HardwareConfig(BaseModel):
         return self
 
     def _apply_library_defaults(self) -> None:
-        lib = self.LIBRARIES.get(self.selected_library)
+        lib = self.runtime_libraries().get(self.selected_library)
         if lib is None:
             return
 
@@ -582,11 +544,12 @@ class HardwareConfig(BaseModel):
             raise ValueError("Cannot resolve knob specs for legacy costs.* config")
 
         library_name = self.selected_library
-        lib = self.LIBRARIES.get(library_name)
+        libraries = self.runtime_libraries()
+        lib = libraries.get(library_name)
         if lib is None:
             raise ValueError(
                 f"Unknown hardware library '{library_name}'. "
-                f"Available: {', '.join(sorted(self.LIBRARIES))}"
+                f"Available: {', '.join(sorted(libraries))}"
             )
 
         assert self.analog is not None
@@ -635,7 +598,7 @@ class HardwareConfig(BaseModel):
             "adc_draft": {"bits": specs.adc_draft_bits, **specs.adc_draft.model_dump(mode="json")},
             "adc_residual": {"bits": specs.adc_residual_bits, **specs.adc_residual.model_dump(mode="json")},
         }
-        lib = self.LIBRARIES.get(specs.library)
+        lib = self.runtime_libraries().get(specs.library)
         if lib is not None:
             if "soc" in lib:
                 payload["soc"] = SocLibraryDefaults.model_validate(lib["soc"]).model_dump(mode="json")
@@ -665,7 +628,14 @@ class HardwareConfig(BaseModel):
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "HardwareConfig":
-        data = _load_yaml(path)
+        p = Path(path)
+        data = _load_yaml(p)
+        raw_library_file = data.get("library_file")
+        if raw_library_file is not None:
+            lf = Path(str(raw_library_file))
+            if not lf.is_absolute():
+                lf = (p.parent / lf).resolve()
+            data["library_file"] = str(lf)
         try:
             return cls.model_validate(data)
         except ValidationError as exc:
