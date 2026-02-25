@@ -295,8 +295,8 @@ def _legacy_components_from_stages(stages: StageBreakdown) -> ComponentBreakdown
 
 
 def _area_mm2(model: ModelConfig, hardware: HardwareConfig) -> StageBreakdown:
-    weights = _weights_per_layer(model)
     if hardware.mode == HardwareMode.legacy:
+        weights = _weights_per_layer(model)
         assert hardware.costs is not None
         analog_area_per_weight = hardware.costs.analog_weight_area.area_mm2_per_weight
         qkv = weights["qkv"] * analog_area_per_weight
@@ -305,9 +305,20 @@ def _area_mm2(model: ModelConfig, hardware: HardwareConfig) -> StageBreakdown:
         digital = hardware.costs.digital_overhead_area_mm2_per_layer
     else:
         specs = hardware.resolve_knob_specs()
-        qkv = weights["qkv"] * specs.array.area_mm2_per_weight
-        wo = weights["wo"] * specs.array.area_mm2_per_weight
-        ffn = weights["ffn"] * specs.array.area_mm2_per_weight
+        arrays_per_weight = float(specs.array.arrays_per_weight)
+        # Preferred path: compute required array count from model shapes/xbar size
+        # and multiply by physical array area when the library provides it.
+        if specs.array.area_mm2_per_array is not None and specs.array.area_mm2_per_array > 0.0:
+            assert hardware.analog is not None
+            tiles = _tile_counts(model, hardware.analog.xbar_size)
+            qkv = float(tiles["qkv"]) * arrays_per_weight * specs.array.area_mm2_per_array
+            wo = float(tiles["wo"]) * arrays_per_weight * specs.array.area_mm2_per_array
+            ffn = float(tiles["ffn"]) * arrays_per_weight * specs.array.area_mm2_per_array
+        else:
+            weights = _weights_per_layer(model)
+            qkv = weights["qkv"] * specs.array.area_mm2_per_weight
+            wo = weights["wo"] * specs.array.area_mm2_per_weight
+            ffn = weights["ffn"] * specs.array.area_mm2_per_weight
         digital = specs.digital.digital_overhead_area_mm2_per_layer
 
     scale = model.n_layers
@@ -338,21 +349,25 @@ def _area_breakdown_mm2(model: ModelConfig, hardware: HardwareConfig) -> AreaBre
     if hardware.mode == HardwareMode.knob_based and hardware.analog is not None:
         specs = hardware.resolve_knob_specs()
         num_tiles_per_layer = _tile_counts(model, hardware.analog.xbar_size)
-        tiles_total = float(model.n_layers) * float(sum(num_tiles_per_layer.values()))
+        tiles_total_logical = float(model.n_layers) * float(sum(num_tiles_per_layer.values()))
+        # Physical arrays scale with replication (arrays_per_weight), while shared readout/input
+        # interfaces (DAC + ADC paths) follow logical array-group count under the 1+3 split.
+        tiles_total_physical = tiles_total_logical * float(specs.array.arrays_per_weight)
 
-        dac_units = tiles_total * float(hardware.analog.xbar_size)
-        adc_units = tiles_total * float(hardware.analog.xbar_size // hardware.analog.num_columns_per_adc)
+        dac_units = tiles_total_logical * float(hardware.analog.xbar_size)
+        adc_units_per_path = tiles_total_logical * float(hardware.analog.xbar_size // hardware.analog.num_columns_per_adc)
 
         dac_mm2 = dac_units * specs.dac.area_mm2_per_unit
-        adc_draft_mm2 = adc_units * specs.adc_draft.area_mm2_per_unit
-        adc_residual_mm2 = adc_units * specs.adc_residual.area_mm2_per_unit
+        adc_draft_mm2 = adc_units_per_path * specs.adc_draft.area_mm2_per_unit
+        adc_residual_mm2 = adc_units_per_path * specs.adc_residual.area_mm2_per_unit
 
         periph = hardware.analog.periphery
-        tia_mm2 = adc_units * periph.tia.area_mm2_per_unit
-        snh_mm2 = adc_units * periph.snh.area_mm2_per_unit
-        mux_mm2 = adc_units * periph.mux.area_mm2_per_unit
-        io_buffers_mm2 = adc_units * periph.io_buffers.area_mm2_per_unit
-        subarray_switches_mm2 = tiles_total * periph.subarray_switches.area_mm2_per_unit
+        adc_total_units = 2.0 * adc_units_per_path
+        tia_mm2 = adc_total_units * periph.tia.area_mm2_per_unit
+        snh_mm2 = adc_total_units * periph.snh.area_mm2_per_unit
+        mux_mm2 = adc_total_units * periph.mux.area_mm2_per_unit
+        io_buffers_mm2 = adc_total_units * periph.io_buffers.area_mm2_per_unit
+        subarray_switches_mm2 = tiles_total_physical * periph.subarray_switches.area_mm2_per_unit
         write_drivers_mm2 = dac_units * periph.write_drivers.area_mm2_per_unit
 
     sram_mm2 = 0.0
@@ -623,6 +638,8 @@ def _add_knob_analog_stage(
 
     base_reads = float(num_tiles * num_slices)
     array_activations = base_reads * active_arrays
+    # Shared-DAC model: one conversion stream per logical input-column group,
+    # broadcast to all active residual subarrays.
     dac_conversions = base_reads * xbar_size
     adc_draft_conversions = base_reads * xbar_size if use_adc_draft else 0.0
     adc_residual_conversions = base_reads * xbar_size if use_adc_residual else 0.0
@@ -643,18 +660,22 @@ def _add_knob_analog_stage(
     adc_draft_latency, adc_residual_latency, adc_latency = _parallel_latency_split(adc_draft_scan, adc_residual_scan)
 
     # Optional analog periphery (TIA, SNH, muxing, buffering, switches, drivers).
-    outputs = dac_conversions
-    scan_steps = base_reads * adc_steps
+    adc_path_outputs = adc_draft_conversions + adc_residual_conversions
+    _, _, adc_scan_latency_steps = _parallel_latency_split(adc_draft_scan, adc_residual_scan)
 
     def periph_energy_latency(spec, *, energy_ops: float, latency_ops: float) -> tuple[float, float]:  # noqa: ANN001
         return (energy_ops * spec.energy_pj_per_op, latency_ops * spec.latency_ns_per_op)
 
-    tia_e, tia_t = periph_energy_latency(periphery.tia, energy_ops=outputs, latency_ops=scan_steps)
-    snh_e, snh_t = periph_energy_latency(periphery.snh, energy_ops=outputs, latency_ops=scan_steps)
-    mux_e, mux_t = periph_energy_latency(periphery.mux, energy_ops=outputs, latency_ops=scan_steps)
-    io_e, io_t = periph_energy_latency(periphery.io_buffers, energy_ops=outputs, latency_ops=scan_steps)
+    tia_e, tia_t = periph_energy_latency(periphery.tia, energy_ops=adc_path_outputs, latency_ops=adc_scan_latency_steps)
+    snh_e, snh_t = periph_energy_latency(periphery.snh, energy_ops=adc_path_outputs, latency_ops=adc_scan_latency_steps)
+    mux_e, mux_t = periph_energy_latency(periphery.mux, energy_ops=adc_path_outputs, latency_ops=adc_scan_latency_steps)
+    io_e, io_t = periph_energy_latency(
+        periphery.io_buffers,
+        energy_ops=adc_path_outputs,
+        latency_ops=adc_scan_latency_steps,
+    )
     sw_e, sw_t = periph_energy_latency(periphery.subarray_switches, energy_ops=array_activations, latency_ops=base_reads)
-    wd_e, wd_t = periph_energy_latency(periphery.write_drivers, energy_ops=outputs, latency_ops=scan_steps)
+    wd_e, wd_t = periph_energy_latency(periphery.write_drivers, energy_ops=dac_conversions, latency_ops=base_reads)
 
     stage_energy = array_energy + dac_energy + adc_draft_energy + adc_residual_energy
     stage_latency = array_latency + dac_latency + adc_latency

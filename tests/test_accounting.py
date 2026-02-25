@@ -127,3 +127,45 @@ def test_reuse_with_full_precision_draft_has_zero_verify_analog_reads() -> None:
     assert components.dac_energy_pj == pytest.approx(0.0)
     assert components.adc_draft_energy_pj == pytest.approx(0.0)
     assert components.adc_residual_energy_pj == pytest.approx(0.0)
+
+
+def test_split_adc_modes_use_shared_dac_across_active_arrays() -> None:
+    model = ModelConfig.model_validate(BASE_MODEL)
+    stats = SpeculationStats(k=1, histogram={0: 1.0})
+
+    _, reuse_breakdown = estimate_point(
+        model=model,
+        hardware=_knob_hardware(reuse_policy="reuse", dac_bits=4),
+        stats=stats,
+        l_prompt=64,
+    )
+    reuse_verify_counts = reuse_breakdown.verify_drafted.activation_counts
+    reuse_bonus_counts = reuse_breakdown.verify_bonus.activation_counts
+    assert reuse_verify_counts is not None
+    assert reuse_bonus_counts is not None
+
+    # Reuse verify for drafted tokens: residual-only read (Arrays 2-4, ADC-Residual only).
+    assert reuse_verify_counts.adc_draft_conversions == pytest.approx(0.0)
+    assert reuse_verify_counts.adc_residual_conversions > 0.0
+    assert reuse_verify_counts.dac_conversions == pytest.approx(reuse_verify_counts.adc_residual_conversions)
+
+    # Bonus token: full read (Arrays 1-4, both ADC paths).
+    assert reuse_bonus_counts.adc_draft_conversions > 0.0
+    assert reuse_bonus_counts.adc_residual_conversions > 0.0
+    assert reuse_bonus_counts.adc_draft_conversions == pytest.approx(reuse_bonus_counts.adc_residual_conversions)
+    assert reuse_bonus_counts.dac_conversions == pytest.approx(reuse_bonus_counts.adc_draft_conversions)
+
+    _, reread_breakdown = estimate_point(
+        model=model,
+        hardware=_knob_hardware(reuse_policy="reread", dac_bits=4),
+        stats=stats,
+        l_prompt=64,
+    )
+    reread_verify_counts = reread_breakdown.verify_drafted.activation_counts
+    assert reread_verify_counts is not None
+
+    # Re-read verify for drafted tokens: full read (Arrays 1-4, both ADC paths).
+    assert reread_verify_counts.adc_draft_conversions > 0.0
+    assert reread_verify_counts.adc_residual_conversions > 0.0
+    assert reread_verify_counts.adc_draft_conversions == pytest.approx(reread_verify_counts.adc_residual_conversions)
+    assert reread_verify_counts.dac_conversions == pytest.approx(reread_verify_counts.adc_draft_conversions)

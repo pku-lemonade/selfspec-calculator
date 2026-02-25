@@ -162,6 +162,8 @@ class AnalogArraySpec(BaseModel):
     energy_pj_per_activation: float = Field(..., ge=0.0)
     latency_ns_per_activation: float = Field(..., ge=0.0)
     area_mm2_per_weight: float = Field(..., ge=0.0)
+    area_mm2_per_array: float | None = Field(default=None, ge=0.0)
+    arrays_per_weight: int = Field(1, ge=1)
 
 
 class VerifySetupKnobs(BaseModel):

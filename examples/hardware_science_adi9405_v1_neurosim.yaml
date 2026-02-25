@@ -1,0 +1,18 @@
+reuse_policy: reuse
+library: science_adi9405_v1_neurosim
+
+memory:
+  # Keep memory section enabled so library defaults (including placeholders) are applied.
+  kv_cache:
+    hbm:
+      value_bytes_per_elem: 1
+      scale_bytes: 2
+      scales_per_token_per_head: 2
+
+analog:
+  xbar_size: 128
+  num_columns_per_adc: 8
+  dac_bits: 4
+  adc:
+    draft_bits: 5
+    residual_bits: 5

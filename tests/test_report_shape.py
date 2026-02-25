@@ -1,3 +1,5 @@
+import json
+
 from selfspec_calculator.config import HardwareConfig, ModelConfig
 from selfspec_calculator.estimator import estimate_sweep
 from selfspec_calculator.stats import SpeculationStats
@@ -118,3 +120,165 @@ def test_area_breakdown_reports_memory_and_periphery_area_and_excludes_hbm_from_
     a1 = r1["area_breakdown_mm2"]
     assert a1["off_chip_hbm_mm2"] == 999.0
     assert a1["on_chip_mm2"] == a0["on_chip_mm2"]
+
+
+def test_array_area_uses_model_derived_array_count_when_area_per_array_is_provided(tmp_path) -> None:
+    model = ModelConfig.model_validate(
+        {
+            "n_layers": 1,
+            "d_model": 64,
+            "n_heads": 8,
+            "activation_bits": 12,
+            "ffn_type": "mlp",
+            "ffn_expansion": 4.0,
+        }
+    )
+    stats = SpeculationStats(k=1, histogram={0: 1.0})
+
+    # For d_model=64, ffn=256, xbar=32:
+    # qkv: ceil(192/32)*ceil(64/32)=12
+    # wo: ceil(64/32)*ceil(64/32)=4
+    # ffn: ceil(256/32)*ceil(64/32) + ceil(64/32)*ceil(256/32)=16+16=32
+    # total logical arrays per layer = 48
+    # with arrays_per_weight=4 => total physical arrays per layer = 192
+    area_per_array_mm2 = 0.5
+    expected_arrays_mm2 = 48.0 * 4.0 * area_per_array_mm2
+
+    lib_path = tmp_path / "lib.json"
+    lib_payload = {
+        "array_area_per_array_test": {
+            "adc": {
+                "4": {
+                    "energy_pj_per_conversion": 0.1,
+                    "latency_ns_per_conversion": 0.1,
+                    "area_mm2_per_unit": 0.001,
+                }
+            },
+            "dac": {
+                "4": {
+                    "energy_pj_per_conversion": 0.01,
+                    "latency_ns_per_conversion": 0.01,
+                    "area_mm2_per_unit": 1e-6,
+                }
+            },
+            "array": {
+                "energy_pj_per_activation": 0.001,
+                "latency_ns_per_activation": 0.01,
+                "area_mm2_per_weight": 123.0,
+                "area_mm2_per_array": area_per_array_mm2,
+                "arrays_per_weight": 4,
+            },
+            "digital": {
+                "attention": {"energy_pj_per_mac": 0.0, "latency_ns_per_mac": 0.0},
+                "softmax": {"energy_pj_per_mac": 0.0, "latency_ns_per_mac": 0.0},
+                "elementwise": {"energy_pj_per_mac": 0.0, "latency_ns_per_mac": 0.0},
+                "kv_cache": {"energy_pj_per_mac": 0.0, "latency_ns_per_mac": 0.0},
+                "digital_overhead_area_mm2_per_layer": 0.0,
+            },
+        }
+    }
+    lib_path.write_text(json.dumps(lib_payload), encoding="utf-8")
+
+    hardware = HardwareConfig.model_validate(
+        {
+            "reuse_policy": "reuse",
+            "library": "array_area_per_array_test",
+            "library_file": str(lib_path),
+            "analog": {
+                "xbar_size": 32,
+                "num_columns_per_adc": 16,
+                "dac_bits": 4,
+                "adc": {"draft_bits": 4, "residual_bits": 4},
+            },
+        }
+    )
+
+    report = estimate_sweep(model=model, hardware=hardware, stats=stats, prompt_lengths=[64]).model_dump(mode="json")
+    arrays_mm2 = report["area_breakdown_mm2"]["on_chip_components"]["arrays_mm2"]
+    assert arrays_mm2 == expected_arrays_mm2
+
+
+def test_periphery_area_counts_both_adc_paths_in_split_architecture(tmp_path) -> None:
+    model = ModelConfig.model_validate(
+        {
+            "n_layers": 1,
+            "d_model": 64,
+            "n_heads": 8,
+            "activation_bits": 12,
+            "ffn_type": "mlp",
+            "ffn_expansion": 4.0,
+        }
+    )
+    stats = SpeculationStats(k=1, histogram={0: 1.0})
+
+    # For d_model=64, xbar=32: logical arrays per layer = 48 (see test above).
+    # ADC units per path = 48 * (32/16) = 96.
+    # With 1+3 split, both ADC paths exist physically, so TIA units = 2 * 96.
+    # Shared-DAC model: DAC units = logical arrays * xbar_size = 48 * 32 = 1536.
+    expected_adc_units_per_path = 96.0
+    expected_tia_units = 192.0
+    expected_dac_units = 1536.0
+
+    lib_path = tmp_path / "lib.json"
+    lib_payload = {
+        "split_area_units_test": {
+            "adc": {
+                "4": {
+                    "energy_pj_per_conversion": 0.0,
+                    "latency_ns_per_conversion": 0.0,
+                    "area_mm2_per_unit": 1.0,
+                }
+            },
+            "dac": {
+                "4": {
+                    "energy_pj_per_conversion": 0.0,
+                    "latency_ns_per_conversion": 0.0,
+                    "area_mm2_per_unit": 1.0,
+                }
+            },
+            "array": {
+                "energy_pj_per_activation": 0.0,
+                "latency_ns_per_activation": 0.0,
+                "area_mm2_per_weight": 0.0,
+                "area_mm2_per_array": 0.0,
+                "arrays_per_weight": 4,
+            },
+            "analog_periphery": {
+                "tia": {"area_mm2_per_unit": 1.0},
+                "snh": {"area_mm2_per_unit": 0.0},
+                "mux": {"area_mm2_per_unit": 0.0},
+                "io_buffers": {"area_mm2_per_unit": 0.0},
+                "subarray_switches": {"area_mm2_per_unit": 0.0},
+                "write_drivers": {"area_mm2_per_unit": 0.0},
+            },
+            "digital": {
+                "attention": {"energy_pj_per_mac": 0.0, "latency_ns_per_mac": 0.0},
+                "softmax": {"energy_pj_per_mac": 0.0, "latency_ns_per_mac": 0.0},
+                "elementwise": {"energy_pj_per_mac": 0.0, "latency_ns_per_mac": 0.0},
+                "kv_cache": {"energy_pj_per_mac": 0.0, "latency_ns_per_mac": 0.0},
+                "digital_overhead_area_mm2_per_layer": 0.0,
+            },
+        }
+    }
+    lib_path.write_text(json.dumps(lib_payload), encoding="utf-8")
+
+    hardware = HardwareConfig.model_validate(
+        {
+            "reuse_policy": "reuse",
+            "library": "split_area_units_test",
+            "library_file": str(lib_path),
+            "analog": {
+                "xbar_size": 32,
+                "num_columns_per_adc": 16,
+                "dac_bits": 4,
+                "adc": {"draft_bits": 4, "residual_bits": 4},
+            },
+        }
+    )
+
+    report = estimate_sweep(model=model, hardware=hardware, stats=stats, prompt_lengths=[64]).model_dump(mode="json")
+    area_components = report["area_breakdown_mm2"]["on_chip_components"]
+    assert area_components["dac_mm2"] == expected_dac_units
+    assert area_components["adc_draft_mm2"] == expected_adc_units_per_path
+    assert area_components["adc_residual_mm2"] == expected_adc_units_per_path
+    assert area_components["tia_mm2"] == expected_tia_units
