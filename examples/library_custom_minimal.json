@@ -29,6 +29,32 @@
         "energy_pj_per_mac": 0.0004,
         "latency_ns_per_mac": 0.0007
       },
+      "features": {
+        "attention_qk": {
+          "energy_pj_per_mac": 0.0004,
+          "latency_ns_per_mac": 0.0007
+        },
+        "attention_softmax": {
+          "energy_pj_per_mac": 0.00005,
+          "latency_ns_per_mac": 0.00005
+        },
+        "attention_pv": {
+          "energy_pj_per_mac": 0.0004,
+          "latency_ns_per_mac": 0.0007
+        },
+        "ffn_activation": {
+          "energy_pj_per_mac": 0.00002,
+          "latency_ns_per_mac": 0.00002
+        },
+        "ffn_gate_multiply": {
+          "energy_pj_per_mac": 0.00002,
+          "latency_ns_per_mac": 0.00002
+        },
+        "kv_cache_update": {
+          "energy_pj_per_mac": 0.0001,
+          "latency_ns_per_mac": 0.0001
+        }
+      },
       "softmax": {
         "energy_pj_per_mac": 0.00005,
         "latency_ns_per_mac": 0.00005

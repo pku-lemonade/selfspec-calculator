@@ -223,6 +223,97 @@ class MemoryTraffic(BaseModel):
         return self.model_copy(update={field: getattr(self, field) * factor for field in type(self).model_fields})
 
 
+class CostChannelBreakdown(BaseModel):
+    compute_energy_pj: float = Field(0.0, ge=0.0)
+    compute_latency_ns: float = Field(0.0, ge=0.0)
+    movement_energy_pj: float = Field(0.0, ge=0.0)
+    movement_latency_ns: float = Field(0.0, ge=0.0)
+
+    def plus(self, other: "CostChannelBreakdown") -> "CostChannelBreakdown":
+        return self.model_copy(
+            update={field: getattr(self, field) + getattr(other, field) for field in type(self).model_fields}
+        )
+
+    def scale(self, factor: float) -> "CostChannelBreakdown":
+        return self.model_copy(update={field: getattr(self, field) * factor for field in type(self).model_fields})
+
+    def add_energy_latency(self, channel: str, energy_pj: float, latency_ns: float) -> "CostChannelBreakdown":
+        if channel == "compute":
+            return self.model_copy(
+                update={
+                    "compute_energy_pj": self.compute_energy_pj + energy_pj,
+                    "compute_latency_ns": self.compute_latency_ns + latency_ns,
+                }
+            )
+        if channel == "movement":
+            return self.model_copy(
+                update={
+                    "movement_energy_pj": self.movement_energy_pj + energy_pj,
+                    "movement_latency_ns": self.movement_latency_ns + latency_ns,
+                }
+            )
+        raise KeyError(channel)
+
+
+class DpuFeatureBreakdown(BaseModel):
+    attention_qk_ops: float = Field(0.0, ge=0.0)
+    attention_qk_energy_pj: float = Field(0.0, ge=0.0)
+    attention_qk_latency_ns: float = Field(0.0, ge=0.0)
+
+    attention_softmax_ops: float = Field(0.0, ge=0.0)
+    attention_softmax_energy_pj: float = Field(0.0, ge=0.0)
+    attention_softmax_latency_ns: float = Field(0.0, ge=0.0)
+
+    attention_pv_ops: float = Field(0.0, ge=0.0)
+    attention_pv_energy_pj: float = Field(0.0, ge=0.0)
+    attention_pv_latency_ns: float = Field(0.0, ge=0.0)
+
+    ffn_activation_ops: float = Field(0.0, ge=0.0)
+    ffn_activation_energy_pj: float = Field(0.0, ge=0.0)
+    ffn_activation_latency_ns: float = Field(0.0, ge=0.0)
+
+    ffn_gate_multiply_ops: float = Field(0.0, ge=0.0)
+    ffn_gate_multiply_energy_pj: float = Field(0.0, ge=0.0)
+    ffn_gate_multiply_latency_ns: float = Field(0.0, ge=0.0)
+
+    kv_cache_update_ops: float = Field(0.0, ge=0.0)
+    kv_cache_update_energy_pj: float = Field(0.0, ge=0.0)
+    kv_cache_update_latency_ns: float = Field(0.0, ge=0.0)
+
+    def plus(self, other: "DpuFeatureBreakdown") -> "DpuFeatureBreakdown":
+        return self.model_copy(
+            update={field: getattr(self, field) + getattr(other, field) for field in type(self).model_fields}
+        )
+
+    def scale(self, factor: float) -> "DpuFeatureBreakdown":
+        return self.model_copy(update={field: getattr(self, field) * factor for field in type(self).model_fields})
+
+    def add(self, feature: str, *, ops: float, energy_pj: float, latency_ns: float) -> "DpuFeatureBreakdown":
+        if feature not in {
+            "attention_qk",
+            "attention_softmax",
+            "attention_pv",
+            "ffn_activation",
+            "ffn_gate_multiply",
+            "kv_cache_update",
+        }:
+            raise KeyError(feature)
+        return self.model_copy(
+            update={
+                f"{feature}_ops": getattr(self, f"{feature}_ops") + ops,
+                f"{feature}_energy_pj": getattr(self, f"{feature}_energy_pj") + energy_pj,
+                f"{feature}_latency_ns": getattr(self, f"{feature}_latency_ns") + latency_ns,
+            }
+        )
+
+
+class MovementAccountingCoverage(BaseModel):
+    modeled: list[str] = Field(default_factory=list)
+    proxy_modeled: list[str] = Field(default_factory=list)
+    excluded: list[str] = Field(default_factory=list)
+    ownership_rules: dict[str, str] = Field(default_factory=dict)
+
+
 class Breakdown(BaseModel):
     energy_pj: float = Field(..., ge=0.0)
     latency_ns: float = Field(..., ge=0.0)
@@ -230,6 +321,8 @@ class Breakdown(BaseModel):
     components: ComponentBreakdown | None = None
     activation_counts: AnalogActivationCounts | None = None
     memory_traffic: MemoryTraffic | None = None
+    dpu_features: DpuFeatureBreakdown | None = None
+    channels: CostChannelBreakdown | None = None
 
     @classmethod
     def from_stage_breakdown(
@@ -238,6 +331,8 @@ class Breakdown(BaseModel):
         components: ComponentBreakdown | None = None,
         activation_counts: AnalogActivationCounts | None = None,
         memory_traffic: MemoryTraffic | None = None,
+        dpu_features: DpuFeatureBreakdown | None = None,
+        channels: CostChannelBreakdown | None = None,
     ) -> "Breakdown":
         energy = sum(
             getattr(stages, f"{s}_energy_pj")
@@ -254,6 +349,8 @@ class Breakdown(BaseModel):
             components=components,
             activation_counts=activation_counts,
             memory_traffic=memory_traffic,
+            dpu_features=dpu_features,
+            channels=channels,
         )
 
     def scale(self, factor: float) -> "Breakdown":
@@ -270,6 +367,12 @@ class Breakdown(BaseModel):
         memory_traffic = None
         if self.memory_traffic is not None:
             memory_traffic = self.memory_traffic.scale(factor)
+        dpu_features = None
+        if self.dpu_features is not None:
+            dpu_features = self.dpu_features.scale(factor)
+        channels = None
+        if self.channels is not None:
+            channels = self.channels.scale(factor)
         return Breakdown(
             energy_pj=self.energy_pj * factor,
             latency_ns=self.latency_ns * factor,
@@ -294,6 +397,8 @@ class Breakdown(BaseModel):
             components=components,
             activation_counts=activation_counts,
             memory_traffic=memory_traffic,
+            dpu_features=dpu_features,
+            channels=channels,
         )
 
 
@@ -326,4 +431,6 @@ class Report(BaseModel):
     break_even_tokens_per_joule_l_prompt: int | None = None
     area: StageBreakdown
     area_breakdown_mm2: AreaBreakdownMm2
+    dpu_feature_mapping: dict[str, str] | None = None
+    movement_accounting: MovementAccountingCoverage | None = None
     notes: list[str] = Field(default_factory=list)

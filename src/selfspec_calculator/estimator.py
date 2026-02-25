@@ -5,6 +5,7 @@ from math import ceil
 from typing import Any
 
 from .config import (
+    DpuFeatureCostOverrides,
     HardwareConfig,
     HardwareMode,
     InputPaths,
@@ -20,9 +21,12 @@ from .report import (
     AreaComponentsMm2,
     BaselineDelta,
     Breakdown,
+    CostChannelBreakdown,
     ComponentBreakdown,
+    DpuFeatureBreakdown,
     MemoryTraffic,
     Metrics,
+    MovementAccountingCoverage,
     PhaseBreakdown,
     Report,
     StageBreakdown,
@@ -32,7 +36,46 @@ from .stats import SpeculationStats, expected_committed_tokens_per_burst
 
 
 ANALOG_STAGES = ("qkv", "wo", "ffn")
-DIGITAL_STAGES = ("qk", "pv", "softmax", "elementwise", "kv_cache")
+DPU_FEATURES = (
+    "attention_qk",
+    "attention_softmax",
+    "attention_pv",
+    "ffn_activation",
+    "ffn_gate_multiply",
+    "kv_cache_update",
+)
+DPU_STAGE_BY_FEATURE = {
+    "attention_qk": "qk",
+    "attention_softmax": "softmax",
+    "attention_pv": "pv",
+    "ffn_activation": "elementwise",
+    "ffn_gate_multiply": "elementwise",
+    "kv_cache_update": "kv_cache",
+}
+DPU_COMPONENT_BY_FEATURE = {
+    "attention_qk": "attention_engine",
+    "attention_softmax": "softmax_unit",
+    "attention_pv": "attention_engine",
+    "ffn_activation": "elementwise_unit",
+    "ffn_gate_multiply": "elementwise_unit",
+    "kv_cache_update": "kv_cache",
+}
+MOVEMENT_ACCOUNTING_COVERAGE = MovementAccountingCoverage(
+    modeled=[
+        "kv_cache_sram_read_write",
+        "kv_cache_hbm_read_write",
+        "kv_cache_fabric_transfer",
+    ],
+    proxy_modeled=[],
+    excluded=[
+        "non_kv_intermediate_activation_movement (attention scores, FFN intermediates, residual streams)",
+        "weight_movement_and_prefetch_traffic",
+    ],
+    ownership_rules={
+        "kv_cache_update": "Counted as DPU compute only when memory modeling is disabled; otherwise ownership moves to memory movement accounting.",
+        "qk/pv/softmax/ffn digital features": "Owned by compute channel only.",
+    },
+)
 
 
 def _kv_bytes_per_token_per_layer(*, d_model: int, n_heads: int, fmt) -> int:  # noqa: ANN001
@@ -82,57 +125,42 @@ def _kv_memory_traffic_by_phase(
     def tokens_to_bytes(tokens: float, bytes_per_token: int) -> float:
         return float(tokens) * float(n_layers) * float(bytes_per_token)
 
-    # HBM reads: base context (prompt) is always served from HBM; no mismatch gating in v1.
-    hbm_read_per_step_bytes = tokens_to_bytes(l_prompt, bytes_hbm_token)
-    draft_hbm_read = float(k) * hbm_read_per_step_bytes
-    verify_drafted_hbm_read = float(k) * hbm_read_per_step_bytes
-    verify_bonus_hbm_read = 1.0 * hbm_read_per_step_bytes
-
-    # SRAM traffic: speculative within-burst KV buffer.
-    if k <= 0:
-        draft_sram_read = 0.0
-        verify_drafted_sram_read = 0.0
-        verify_bonus_sram_read = 0.0
-        draft_sram_write = 0.0
-        verify_drafted_sram_write = 0.0
-        verify_bonus_sram_write = 0.0
-    else:
-        draft_sram_read = tokens_to_bytes(k * (k - 1) / 2.0, bytes_sram_token)
-        verify_drafted_sram_read = tokens_to_bytes(k * (k - 1) / 2.0, bytes_sram_token)
-        verify_bonus_sram_read = tokens_to_bytes(float(k), bytes_sram_token)
-
-        draft_sram_write = tokens_to_bytes(float(k), bytes_sram_token)
-        verify_drafted_sram_write = tokens_to_bytes(float(k), bytes_sram_token)
-        verify_bonus_sram_write = tokens_to_bytes(1.0, bytes_sram_token)
-
-    # HBM writes: commit-only (policy B).
-    committed_tokens = expected_committed_tokens_per_burst(stats)
-    hbm_write = tokens_to_bytes(committed_tokens, bytes_hbm_token)
-
-    draft = MemoryTraffic(
-        sram_read_bytes=draft_sram_read,
-        sram_write_bytes=draft_sram_write,
-        hbm_read_bytes=draft_hbm_read,
-        hbm_write_bytes=0.0,
-    )
-    verify_drafted = MemoryTraffic(
-        sram_read_bytes=verify_drafted_sram_read,
-        sram_write_bytes=verify_drafted_sram_write,
-        hbm_read_bytes=verify_drafted_hbm_read,
-        hbm_write_bytes=0.0,
-    )
-    verify_bonus = MemoryTraffic(
-        sram_read_bytes=verify_bonus_sram_read,
-        sram_write_bytes=verify_bonus_sram_write,
-        hbm_read_bytes=verify_bonus_hbm_read,
-        hbm_write_bytes=hbm_write,
-    )
-
-    # Fabric: model as bytes moved for both SRAM and HBM traffic (conservative, configurable by energy/byte and BW).
-    for traffic in (draft, verify_drafted, verify_bonus):
+    def phase_step_traffic(
+        *,
+        prompt_tokens_from_hbm: float,
+        speculative_tokens_from_sram: float,
+        speculative_tokens_to_sram: float,
+        committed_tokens_to_hbm: float,
+    ) -> MemoryTraffic:
+        traffic = MemoryTraffic(
+            sram_read_bytes=tokens_to_bytes(speculative_tokens_from_sram, bytes_sram_token),
+            sram_write_bytes=tokens_to_bytes(speculative_tokens_to_sram, bytes_sram_token),
+            hbm_read_bytes=tokens_to_bytes(prompt_tokens_from_hbm, bytes_hbm_token),
+            hbm_write_bytes=tokens_to_bytes(committed_tokens_to_hbm, bytes_hbm_token),
+        )
         traffic.fabric_read_bytes = traffic.sram_read_bytes + traffic.hbm_read_bytes
         traffic.fabric_write_bytes = traffic.sram_write_bytes + traffic.hbm_write_bytes
+        return traffic
 
+    draft = MemoryTraffic()
+    verify_drafted = MemoryTraffic()
+    for i in range(k):
+        step = phase_step_traffic(
+            prompt_tokens_from_hbm=float(l_prompt),
+            speculative_tokens_from_sram=float(i),
+            speculative_tokens_to_sram=1.0,
+            committed_tokens_to_hbm=0.0,
+        )
+        draft = draft.plus(step)
+        verify_drafted = verify_drafted.plus(step)
+
+    committed_tokens = expected_committed_tokens_per_burst(stats)
+    verify_bonus = phase_step_traffic(
+        prompt_tokens_from_hbm=float(l_prompt),
+        speculative_tokens_from_sram=float(k),
+        speculative_tokens_to_sram=1.0,
+        committed_tokens_to_hbm=committed_tokens,
+    )
     return {"draft": draft, "verify_drafted": verify_drafted, "verify_bonus": verify_bonus}
 
 
@@ -166,20 +194,22 @@ def _add_memory_traffic_costs(
     components = components.add_energy_latency("sram", sram_e, sram_t)
     components = components.add_energy_latency("hbm", hbm_e, hbm_t)
     components = components.add_energy_latency("fabric", fabric_e, fabric_t)
+    channels = breakdown.channels or CostChannelBreakdown()
+    channels = channels.add_energy_latency("movement", mem_energy, mem_latency)
 
     return Breakdown.from_stage_breakdown(
         stages,
         components=components,
         activation_counts=breakdown.activation_counts,
         memory_traffic=traffic,
+        dpu_features=breakdown.dpu_features,
+        channels=channels,
     )
 
 
-def _mac_counts_per_token(model: ModelConfig, l_prompt: int) -> dict[str, int]:
+def _analog_macs_per_token(model: ModelConfig) -> dict[str, int]:
     d_model = model.d_model
     d_ff = model.effective_d_ff
-    d_head = model.d_head
-    n_heads = model.n_heads
 
     qkv_macs = 3 * d_model * d_model
     wo_macs = d_model * d_model
@@ -188,21 +218,26 @@ def _mac_counts_per_token(model: ModelConfig, l_prompt: int) -> dict[str, int]:
     else:
         ffn_macs = 3 * d_model * d_ff
 
-    qk_macs = n_heads * l_prompt * d_head
-    pv_macs = n_heads * l_prompt * d_head
-    softmax_ops = n_heads * l_prompt
-    elementwise_ops = d_ff
-    kv_cache_ops = d_model
-
     return {
         "qkv": qkv_macs,
         "wo": wo_macs,
         "ffn": ffn_macs,
-        "qk": qk_macs,
-        "pv": pv_macs,
-        "softmax": softmax_ops,
-        "elementwise": elementwise_ops,
-        "kv_cache": kv_cache_ops,
+    }
+
+
+def _dpu_feature_ops_per_token(model: ModelConfig, l_prompt: int) -> dict[str, int]:
+    d_ff = model.effective_d_ff
+    d_model = model.d_model
+    qk_and_pv_ops = model.n_heads * l_prompt * model.d_head
+    ffn_gate_multiply_ops = d_ff if model.ffn_type.value == "swiglu" else 0
+
+    return {
+        "attention_qk": qk_and_pv_ops,
+        "attention_softmax": model.n_heads * l_prompt,
+        "attention_pv": qk_and_pv_ops,
+        "ffn_activation": d_ff,
+        "ffn_gate_multiply": ffn_gate_multiply_ops,
+        "kv_cache_update": d_model,
     }
 
 
@@ -249,28 +284,89 @@ def _verify_additional_cost_for_block(
     return (c.energy_pj_per_mac, c.latency_ns_per_mac)
 
 
-def _digital_costs_legacy(hardware: HardwareConfig) -> dict[str, tuple[float, float]]:
+def _dpu_feature_costs_legacy(hardware: HardwareConfig) -> tuple[dict[str, tuple[float, float]], dict[str, str]]:
     assert hardware.costs is not None
-    return {
-        "qk": (hardware.costs.digital_attention.energy_pj_per_mac, hardware.costs.digital_attention.latency_ns_per_mac),
-        "pv": (hardware.costs.digital_attention.energy_pj_per_mac, hardware.costs.digital_attention.latency_ns_per_mac),
-        "softmax": (hardware.costs.digital_softmax.energy_pj_per_mac, hardware.costs.digital_softmax.latency_ns_per_mac),
-        "elementwise": (
-            hardware.costs.digital_elementwise.energy_pj_per_mac,
-            hardware.costs.digital_elementwise.latency_ns_per_mac,
-        ),
-        "kv_cache": (hardware.costs.kv_cache.energy_pj_per_mac, hardware.costs.kv_cache.latency_ns_per_mac),
-    }
+    overrides = hardware.costs.digital_features or DpuFeatureCostOverrides()
+    mapping: dict[str, str] = {}
+
+    def pick(
+        *,
+        feature: str,
+        explicit,  # noqa: ANN001
+        fallback,  # noqa: ANN001
+        fallback_source: str,
+    ) -> tuple[float, float]:
+        if explicit is not None:
+            mapping[feature] = f"explicit:costs.digital_features.{feature}"
+            return (explicit.energy_pj_per_mac, explicit.latency_ns_per_mac)
+        mapping[feature] = f"mapped:{fallback_source}"
+        return (fallback.energy_pj_per_mac, fallback.latency_ns_per_mac)
+
+    return (
+        {
+            "attention_qk": pick(
+                feature="attention_qk",
+                explicit=overrides.attention_qk,
+                fallback=hardware.costs.digital_attention,
+                fallback_source="costs.digital_attention",
+            ),
+            "attention_softmax": pick(
+                feature="attention_softmax",
+                explicit=overrides.attention_softmax,
+                fallback=hardware.costs.digital_softmax,
+                fallback_source="costs.digital_softmax",
+            ),
+            "attention_pv": pick(
+                feature="attention_pv",
+                explicit=overrides.attention_pv,
+                fallback=hardware.costs.digital_attention,
+                fallback_source="costs.digital_attention",
+            ),
+            "ffn_activation": pick(
+                feature="ffn_activation",
+                explicit=overrides.ffn_activation,
+                fallback=hardware.costs.digital_elementwise,
+                fallback_source="costs.digital_elementwise",
+            ),
+            "ffn_gate_multiply": pick(
+                feature="ffn_gate_multiply",
+                explicit=overrides.ffn_gate_multiply,
+                fallback=hardware.costs.digital_elementwise,
+                fallback_source="costs.digital_elementwise",
+            ),
+            "kv_cache_update": pick(
+                feature="kv_cache_update",
+                explicit=overrides.kv_cache_update,
+                fallback=hardware.costs.kv_cache,
+                fallback_source="costs.kv_cache",
+            ),
+        },
+        mapping,
+    )
 
 
-def _digital_costs_knob(specs: ResolvedKnobSpecs) -> dict[str, tuple[float, float]]:
-    return {
-        "qk": (specs.digital.attention.energy_pj_per_mac, specs.digital.attention.latency_ns_per_mac),
-        "pv": (specs.digital.attention.energy_pj_per_mac, specs.digital.attention.latency_ns_per_mac),
-        "softmax": (specs.digital.softmax.energy_pj_per_mac, specs.digital.softmax.latency_ns_per_mac),
-        "elementwise": (specs.digital.elementwise.energy_pj_per_mac, specs.digital.elementwise.latency_ns_per_mac),
-        "kv_cache": (specs.digital.kv_cache.energy_pj_per_mac, specs.digital.kv_cache.latency_ns_per_mac),
-    }
+def _dpu_feature_costs_knob(specs: ResolvedKnobSpecs) -> tuple[dict[str, tuple[float, float]], dict[str, str]]:
+    resolved, mapping = specs.digital.resolve_feature_costs()
+    return (
+        {
+            "attention_qk": (resolved.attention_qk.energy_pj_per_mac, resolved.attention_qk.latency_ns_per_mac),
+            "attention_softmax": (
+                resolved.attention_softmax.energy_pj_per_mac,
+                resolved.attention_softmax.latency_ns_per_mac,
+            ),
+            "attention_pv": (resolved.attention_pv.energy_pj_per_mac, resolved.attention_pv.latency_ns_per_mac),
+            "ffn_activation": (resolved.ffn_activation.energy_pj_per_mac, resolved.ffn_activation.latency_ns_per_mac),
+            "ffn_gate_multiply": (
+                resolved.ffn_gate_multiply.energy_pj_per_mac,
+                resolved.ffn_gate_multiply.latency_ns_per_mac,
+            ),
+            "kv_cache_update": (
+                resolved.kv_cache_update.energy_pj_per_mac,
+                resolved.kv_cache_update.latency_ns_per_mac,
+            ),
+        },
+        mapping,
+    )
 
 
 def _legacy_components_from_stages(stages: StageBreakdown) -> ComponentBreakdown:
@@ -292,6 +388,27 @@ def _legacy_components_from_stages(stages: StageBreakdown) -> ComponentBreakdown
         control_energy_pj=stages.control_energy_pj,
         control_latency_ns=stages.control_latency_ns,
     )
+
+
+def _add_dpu_feature_stage(
+    *,
+    acc: _TokenAccumulator,
+    feature: str,
+    ops: float,
+    energy_per_op: float,
+    latency_per_op: float,
+    parallel_units: int = 1,
+) -> None:
+    if ops <= 0.0:
+        return
+
+    energy = ops * energy_per_op
+    latency = (ops * latency_per_op) / float(max(parallel_units, 1))
+    stage = DPU_STAGE_BY_FEATURE[feature]
+    component = DPU_COMPONENT_BY_FEATURE[feature]
+    acc.add_stage(stage, energy, latency)
+    acc.add_component(component, energy, latency)
+    acc.add_dpu_feature(feature, ops=ops, energy_pj=energy, latency_ns=latency)
 
 
 def _attention_cim_unit_area_mm2(*, specs: ResolvedKnobSpecs, xbar_size: int) -> float:
@@ -414,130 +531,153 @@ def _area_breakdown_mm2(model: ModelConfig, hardware: HardwareConfig) -> AreaBre
 
 
 def _token_step_costs_legacy(model: ModelConfig, hardware: HardwareConfig, l_prompt: int) -> tuple[Breakdown, Breakdown]:
-    macs = _mac_counts_per_token(model, l_prompt)
-    digital_costs = _digital_costs_legacy(hardware)
-    digital_stages = DIGITAL_STAGES if hardware.memory is None else tuple(s for s in DIGITAL_STAGES if s != "kv_cache")
+    analog_macs = _analog_macs_per_token(model)
+    dpu_feature_ops = _dpu_feature_ops_per_token(model, l_prompt)
+    dpu_feature_costs, _mapping = _dpu_feature_costs_legacy(hardware)
+    enabled_dpu_features = (
+        DPU_FEATURES if hardware.memory is None else tuple(feature for feature in DPU_FEATURES if feature != "kv_cache_update")
+    )
     analog_outputs = {s: sum(m_out for m_out, _n_in in shapes) for s, shapes in _analog_stage_shapes(model).items()}
     buf_knobs = hardware.soc.buffers_add
 
-    def stage_energy_latency(stage: str, energy_per_mac: float, latency_per_mac: float) -> tuple[float, float]:
-        m = macs[stage]
-        return (m * energy_per_mac, m * latency_per_mac)
-
-    draft_stage = StageBreakdown()
-    verify_full_stage = StageBreakdown()
+    draft = _TokenAccumulator()
+    verify_full = _TokenAccumulator()
 
     for layer in range(model.n_layers):
         policy = model.draft_policy.for_layer(layer)
         for block, precision in {"qkv": policy.qkv, "wo": policy.wo, "ffn": policy.ffn}.items():
             e_per, t_per = _analog_cost_for_block(hardware, precision)
-            e, t = stage_energy_latency(block, e_per, t_per)
-            draft_stage = draft_stage.add_energy_latency(block, e, t)
+            draft_energy = analog_macs[block] * e_per
+            draft_latency = analog_macs[block] * t_per
+            draft.add_stage(block, draft_energy, draft_latency)
+            draft.add_component("arrays", draft_energy, draft_latency)
 
             assert hardware.costs is not None
-            e_full, t_full = stage_energy_latency(
+            full_energy = analog_macs[block] * hardware.costs.analog_full.energy_pj_per_mac
+            full_latency = analog_macs[block] * hardware.costs.analog_full.latency_ns_per_mac
+            verify_full.add_stage(
                 block,
-                hardware.costs.analog_full.energy_pj_per_mac,
-                hardware.costs.analog_full.latency_ns_per_mac,
+                full_energy,
+                full_latency,
             )
-            verify_full_stage = verify_full_stage.add_energy_latency(block, e_full, t_full)
+            verify_full.add_component("arrays", full_energy, full_latency)
 
             outputs = float(analog_outputs[block])
             if hardware.reuse_policy == ReusePolicy.reuse:
-                draft_stage = draft_stage.add_energy_latency(
-                    "buffers_add",
-                    outputs * buf_knobs.energy_pj_per_op,
-                    outputs * buf_knobs.latency_ns_per_op,
-                )
+                energy = outputs * buf_knobs.energy_pj_per_op
+                latency = outputs * buf_knobs.latency_ns_per_op
+                draft.add_stage("buffers_add", energy, latency)
+                draft.add_component("buffers_add", energy, latency)
             if precision == PrecisionMode.full:
-                draft_stage = draft_stage.add_energy_latency(
-                    "buffers_add",
-                    outputs * buf_knobs.energy_pj_per_op,
-                    outputs * buf_knobs.latency_ns_per_op,
-                )
-            verify_full_stage = verify_full_stage.add_energy_latency(
-                "buffers_add",
-                outputs * buf_knobs.energy_pj_per_op,
-                outputs * buf_knobs.latency_ns_per_op,
-            )
+                energy = outputs * buf_knobs.energy_pj_per_op
+                latency = outputs * buf_knobs.latency_ns_per_op
+                draft.add_stage("buffers_add", energy, latency)
+                draft.add_component("buffers_add", energy, latency)
 
-        for stage in digital_stages:
-            e_per, t_per = digital_costs[stage]
-            e, t = stage_energy_latency(stage, e_per, t_per)
-            draft_stage = draft_stage.add_energy_latency(stage, e, t)
-            verify_full_stage = verify_full_stage.add_energy_latency(stage, e, t)
+            bonus_energy = outputs * buf_knobs.energy_pj_per_op
+            bonus_latency = outputs * buf_knobs.latency_ns_per_op
+            verify_full.add_stage("buffers_add", bonus_energy, bonus_latency)
+            verify_full.add_component("buffers_add", bonus_energy, bonus_latency)
+
+        for feature in enabled_dpu_features:
+            e_per, t_per = dpu_feature_costs[feature]
+            parallel_units = hardware.soc.attention_cim_units if feature in {"attention_qk", "attention_pv"} else 1
+            ops = float(dpu_feature_ops[feature])
+            _add_dpu_feature_stage(
+                acc=draft,
+                feature=feature,
+                ops=ops,
+                energy_per_op=e_per,
+                latency_per_op=t_per,
+                parallel_units=parallel_units,
+            )
+            _add_dpu_feature_stage(
+                acc=verify_full,
+                feature=feature,
+                ops=ops,
+                energy_per_op=e_per,
+                latency_per_op=t_per,
+                parallel_units=parallel_units,
+            )
 
     ctrl_e_tok = model.n_layers * hardware.soc.control.energy_pj_per_token
     ctrl_t_tok = model.n_layers * hardware.soc.control.latency_ns_per_token
-    draft_stage = draft_stage.add_energy_latency("control", ctrl_e_tok, ctrl_t_tok)
-    verify_full_stage = verify_full_stage.add_energy_latency("control", ctrl_e_tok, ctrl_t_tok)
+    draft.add_stage("control", ctrl_e_tok, ctrl_t_tok)
+    draft.add_component("control", ctrl_e_tok, ctrl_t_tok)
+    verify_full.add_stage("control", ctrl_e_tok, ctrl_t_tok)
+    verify_full.add_component("control", ctrl_e_tok, ctrl_t_tok)
 
     ctrl_e_burst = model.n_layers * hardware.soc.control.energy_pj_per_burst
     ctrl_t_burst = model.n_layers * hardware.soc.control.latency_ns_per_burst
     setup_e_burst = model.n_layers * hardware.soc.verify_setup.energy_pj_per_burst
     setup_t_burst = model.n_layers * hardware.soc.verify_setup.latency_ns_per_burst
-    verify_full_stage = verify_full_stage.add_energy_latency(
-        "control",
-        ctrl_e_burst + setup_e_burst,
-        ctrl_t_burst + setup_t_burst,
-    )
+    verify_full.add_stage("control", ctrl_e_burst + setup_e_burst, ctrl_t_burst + setup_t_burst)
+    verify_full.add_component("control", ctrl_e_burst + setup_e_burst, ctrl_t_burst + setup_t_burst)
 
-    return (
-        Breakdown.from_stage_breakdown(draft_stage, components=_legacy_components_from_stages(draft_stage)),
-        Breakdown.from_stage_breakdown(
-            verify_full_stage,
-            components=_legacy_components_from_stages(verify_full_stage),
-        ),
-    )
+    draft_breakdown = draft.to_breakdown().model_copy(update={"activation_counts": None})
+    verify_full_breakdown = verify_full.to_breakdown().model_copy(update={"activation_counts": None})
+    return draft_breakdown, verify_full_breakdown
 
 
 def _verify_drafted_token_additional_stage_legacy(
     model: ModelConfig, hardware: HardwareConfig, l_prompt: int
 ) -> Breakdown:
-    macs = _mac_counts_per_token(model, l_prompt)
-    digital_costs = _digital_costs_legacy(hardware)
-    digital_stages = DIGITAL_STAGES if hardware.memory is None else tuple(s for s in DIGITAL_STAGES if s != "kv_cache")
+    analog_macs = _analog_macs_per_token(model)
+    dpu_feature_ops = _dpu_feature_ops_per_token(model, l_prompt)
+    dpu_feature_costs, _mapping = _dpu_feature_costs_legacy(hardware)
+    enabled_dpu_features = (
+        DPU_FEATURES if hardware.memory is None else tuple(feature for feature in DPU_FEATURES if feature != "kv_cache_update")
+    )
     analog_outputs = {s: sum(m_out for m_out, _n_in in shapes) for s, shapes in _analog_stage_shapes(model).items()}
     buf_knobs = hardware.soc.buffers_add
 
-    additional = StageBreakdown()
+    additional = _TokenAccumulator()
 
     for layer in range(model.n_layers):
         policy = model.draft_policy.for_layer(layer)
         for block, executed_precision in {"qkv": policy.qkv, "wo": policy.wo, "ffn": policy.ffn}.items():
             e_per, t_per = _verify_additional_cost_for_block(hardware, executed_precision, token_kind="drafted")
-            additional = additional.add_energy_latency(block, macs[block] * e_per, macs[block] * t_per)
+            analog_energy = analog_macs[block] * e_per
+            analog_latency = analog_macs[block] * t_per
+            additional.add_stage(block, analog_energy, analog_latency)
+            additional.add_component("arrays", analog_energy, analog_latency)
 
             outputs = float(analog_outputs[block])
             if hardware.reuse_policy == ReusePolicy.reread:
-                additional = additional.add_energy_latency(
-                    "buffers_add",
-                    outputs * buf_knobs.energy_pj_per_op,
-                    outputs * buf_knobs.latency_ns_per_op,
-                )
+                energy = outputs * buf_knobs.energy_pj_per_op
+                latency = outputs * buf_knobs.latency_ns_per_op
+                additional.add_stage("buffers_add", energy, latency)
+                additional.add_component("buffers_add", energy, latency)
             else:
                 if executed_precision == PrecisionMode.full:
-                    additional = additional.add_energy_latency(
-                        "buffers_add",
-                        outputs * buf_knobs.energy_pj_per_op,
-                        outputs * buf_knobs.latency_ns_per_op,
-                    )
+                    energy = outputs * buf_knobs.energy_pj_per_op
+                    latency = outputs * buf_knobs.latency_ns_per_op
+                    additional.add_stage("buffers_add", energy, latency)
+                    additional.add_component("buffers_add", energy, latency)
                 else:
-                    additional = additional.add_energy_latency(
-                        "buffers_add",
-                        2.0 * outputs * buf_knobs.energy_pj_per_op,
-                        2.0 * outputs * buf_knobs.latency_ns_per_op,
-                    )
+                    energy = 2.0 * outputs * buf_knobs.energy_pj_per_op
+                    latency = 2.0 * outputs * buf_knobs.latency_ns_per_op
+                    additional.add_stage("buffers_add", energy, latency)
+                    additional.add_component("buffers_add", energy, latency)
 
-        for stage in digital_stages:
-            e_per, t_per = digital_costs[stage]
-            additional = additional.add_energy_latency(stage, macs[stage] * e_per, macs[stage] * t_per)
+        for feature in enabled_dpu_features:
+            e_per, t_per = dpu_feature_costs[feature]
+            parallel_units = hardware.soc.attention_cim_units if feature in {"attention_qk", "attention_pv"} else 1
+            _add_dpu_feature_stage(
+                acc=additional,
+                feature=feature,
+                ops=float(dpu_feature_ops[feature]),
+                energy_per_op=e_per,
+                latency_per_op=t_per,
+                parallel_units=parallel_units,
+            )
 
     ctrl_e_tok = model.n_layers * hardware.soc.control.energy_pj_per_token
     ctrl_t_tok = model.n_layers * hardware.soc.control.latency_ns_per_token
-    additional = additional.add_energy_latency("control", ctrl_e_tok, ctrl_t_tok)
+    additional.add_stage("control", ctrl_e_tok, ctrl_t_tok)
+    additional.add_component("control", ctrl_e_tok, ctrl_t_tok)
 
-    return Breakdown.from_stage_breakdown(additional, components=_legacy_components_from_stages(additional))
+    return additional.to_breakdown().model_copy(update={"activation_counts": None})
 
 
 def _analog_stage_shapes(model: ModelConfig) -> dict[str, list[tuple[int, int]]]:
@@ -599,12 +739,18 @@ class _TokenAccumulator:
         self.stages = StageBreakdown()
         self.components = ComponentBreakdown()
         self.activation_counts = AnalogActivationCounts()
+        self.dpu_features = DpuFeatureBreakdown()
+        self.channels = CostChannelBreakdown()
 
     def add_stage(self, stage: str, energy_pj: float, latency_ns: float) -> None:
         self.stages = self.stages.add_energy_latency(stage, energy_pj, latency_ns)
+        self.channels = self.channels.add_energy_latency("compute", energy_pj, latency_ns)
 
     def add_component(self, component: str, energy_pj: float, latency_ns: float) -> None:
         self.components = self.components.add_energy_latency(component, energy_pj, latency_ns)
+
+    def add_dpu_feature(self, feature: str, *, ops: float, energy_pj: float, latency_ns: float) -> None:
+        self.dpu_features = self.dpu_features.add(feature, ops=ops, energy_pj=energy_pj, latency_ns=latency_ns)
 
     def add_analog_counts(
         self,
@@ -628,6 +774,8 @@ class _TokenAccumulator:
             self.stages,
             components=self.components,
             activation_counts=self.activation_counts,
+            dpu_features=self.dpu_features,
+            channels=self.channels,
         )
 
 
@@ -716,23 +864,20 @@ def _add_knob_analog_stage(
 def _add_knob_digital_stage(
     *,
     acc: _TokenAccumulator,
-    stage: str,
-    macs: int,
-    energy_per_mac: float,
-    latency_per_mac: float,
+    feature: str,
+    ops: float,
+    energy_per_op: float,
+    latency_per_op: float,
     parallel_units: int = 1,
 ) -> None:
-    energy = macs * energy_per_mac
-    latency = (macs * latency_per_mac) / float(max(parallel_units, 1))
-    acc.add_stage(stage, energy, latency)
-    if stage in {"qk", "pv"}:
-        acc.add_component("attention_engine", energy, latency)
-    elif stage == "softmax":
-        acc.add_component("softmax_unit", energy, latency)
-    elif stage == "elementwise":
-        acc.add_component("elementwise_unit", energy, latency)
-    elif stage == "kv_cache":
-        acc.add_component("kv_cache", energy, latency)
+    _add_dpu_feature_stage(
+        acc=acc,
+        feature=feature,
+        ops=ops,
+        energy_per_op=energy_per_op,
+        latency_per_op=latency_per_op,
+        parallel_units=parallel_units,
+    )
 
 
 def _token_step_costs_knob(
@@ -742,9 +887,11 @@ def _token_step_costs_knob(
     l_prompt: int,
 ) -> tuple[Breakdown, Breakdown]:
     assert hardware.analog is not None
-    macs = _mac_counts_per_token(model, l_prompt)
-    digital_costs = _digital_costs_knob(specs)
-    digital_stages = DIGITAL_STAGES if hardware.memory is None else tuple(s for s in DIGITAL_STAGES if s != "kv_cache")
+    dpu_feature_ops = _dpu_feature_ops_per_token(model, l_prompt)
+    dpu_feature_costs, _mapping = _dpu_feature_costs_knob(specs)
+    enabled_dpu_features = (
+        DPU_FEATURES if hardware.memory is None else tuple(feature for feature in DPU_FEATURES if feature != "kv_cache_update")
+    )
     num_tiles = _tile_counts(model, hardware.analog.xbar_size)
     num_slices = ceil(model.activation_bits / hardware.analog.dac_bits)
     buf_knobs = hardware.soc.buffers_add
@@ -793,23 +940,23 @@ def _token_step_costs_knob(
                 add_buffers_add(draft, outputs)  # ADC-output combine
             add_buffers_add(verify_full, outputs)  # ADC-output combine (bonus token)
 
-        for stage in digital_stages:
-            e_per, t_per = digital_costs[stage]
-            parallel_units = hardware.soc.attention_cim_units if stage in {"qk", "pv"} else 1
+        for feature in enabled_dpu_features:
+            e_per, t_per = dpu_feature_costs[feature]
+            parallel_units = hardware.soc.attention_cim_units if feature in {"attention_qk", "attention_pv"} else 1
             _add_knob_digital_stage(
                 acc=draft,
-                stage=stage,
-                macs=macs[stage],
-                energy_per_mac=e_per,
-                latency_per_mac=t_per,
+                feature=feature,
+                ops=float(dpu_feature_ops[feature]),
+                energy_per_op=e_per,
+                latency_per_op=t_per,
                 parallel_units=parallel_units,
             )
             _add_knob_digital_stage(
                 acc=verify_full,
-                stage=stage,
-                macs=macs[stage],
-                energy_per_mac=e_per,
-                latency_per_mac=t_per,
+                feature=feature,
+                ops=float(dpu_feature_ops[feature]),
+                energy_per_op=e_per,
+                latency_per_op=t_per,
                 parallel_units=parallel_units,
             )
 
@@ -840,9 +987,11 @@ def _verify_drafted_token_additional_stage_knob(
     l_prompt: int,
 ) -> Breakdown:
     assert hardware.analog is not None
-    macs = _mac_counts_per_token(model, l_prompt)
-    digital_costs = _digital_costs_knob(specs)
-    digital_stages = DIGITAL_STAGES if hardware.memory is None else tuple(s for s in DIGITAL_STAGES if s != "kv_cache")
+    dpu_feature_ops = _dpu_feature_ops_per_token(model, l_prompt)
+    dpu_feature_costs, _mapping = _dpu_feature_costs_knob(specs)
+    enabled_dpu_features = (
+        DPU_FEATURES if hardware.memory is None else tuple(feature for feature in DPU_FEATURES if feature != "kv_cache_update")
+    )
     num_tiles = _tile_counts(model, hardware.analog.xbar_size)
     num_slices = ceil(model.activation_bits / hardware.analog.dac_bits)
     buf_knobs = hardware.soc.buffers_add
@@ -889,15 +1038,15 @@ def _verify_drafted_token_additional_stage_knob(
                 else:
                     add_buffers_add(additional, 2.0 * outputs)  # buffer read + Final = D_reg + C
 
-        for stage in digital_stages:
-            e_per, t_per = digital_costs[stage]
-            parallel_units = hardware.soc.attention_cim_units if stage in {"qk", "pv"} else 1
+        for feature in enabled_dpu_features:
+            e_per, t_per = dpu_feature_costs[feature]
+            parallel_units = hardware.soc.attention_cim_units if feature in {"attention_qk", "attention_pv"} else 1
             _add_knob_digital_stage(
                 acc=additional,
-                stage=stage,
-                macs=macs[stage],
-                energy_per_mac=e_per,
-                latency_per_mac=t_per,
+                feature=feature,
+                ops=float(dpu_feature_ops[feature]),
+                energy_per_op=e_per,
+                latency_per_op=t_per,
                 parallel_units=parallel_units,
             )
 
@@ -917,9 +1066,11 @@ def _max_layer_compute_latencies_ns_knob(
     l_prompt: int,
 ) -> tuple[float, float, float]:
     assert hardware.analog is not None
-    macs = _mac_counts_per_token(model, l_prompt)
-    digital_costs = _digital_costs_knob(specs)
-    digital_stages = DIGITAL_STAGES if hardware.memory is None else tuple(s for s in DIGITAL_STAGES if s != "kv_cache")
+    dpu_feature_ops = _dpu_feature_ops_per_token(model, l_prompt)
+    dpu_feature_costs, _mapping = _dpu_feature_costs_knob(specs)
+    enabled_dpu_features = (
+        DPU_FEATURES if hardware.memory is None else tuple(feature for feature in DPU_FEATURES if feature != "kv_cache_update")
+    )
     num_tiles = _tile_counts(model, hardware.analog.xbar_size)
     num_slices = ceil(model.activation_bits / hardware.analog.dac_bits)
     buf_knobs = hardware.soc.buffers_add
@@ -1010,31 +1161,31 @@ def _max_layer_compute_latencies_ns_knob(
                 else:
                     add_buffers_add(verify_drafted, 2.0 * outputs)  # buffer read + Final = D_reg + C
 
-        for stage in digital_stages:
-            e_per, t_per = digital_costs[stage]
-            parallel_units = hardware.soc.attention_cim_units if stage in {"qk", "pv"} else 1
+        for feature in enabled_dpu_features:
+            e_per, t_per = dpu_feature_costs[feature]
+            parallel_units = hardware.soc.attention_cim_units if feature in {"attention_qk", "attention_pv"} else 1
             _add_knob_digital_stage(
                 acc=draft,
-                stage=stage,
-                macs=macs[stage],
-                energy_per_mac=e_per,
-                latency_per_mac=t_per,
+                feature=feature,
+                ops=float(dpu_feature_ops[feature]),
+                energy_per_op=e_per,
+                latency_per_op=t_per,
                 parallel_units=parallel_units,
             )
             _add_knob_digital_stage(
                 acc=verify_drafted,
-                stage=stage,
-                macs=macs[stage],
-                energy_per_mac=e_per,
-                latency_per_mac=t_per,
+                feature=feature,
+                ops=float(dpu_feature_ops[feature]),
+                energy_per_op=e_per,
+                latency_per_op=t_per,
                 parallel_units=parallel_units,
             )
             _add_knob_digital_stage(
                 acc=verify_bonus,
-                stage=stage,
-                macs=macs[stage],
-                energy_per_mac=e_per,
-                latency_per_mac=t_per,
+                feature=feature,
+                ops=float(dpu_feature_ops[feature]),
+                energy_per_op=e_per,
+                latency_per_op=t_per,
                 parallel_units=parallel_units,
             )
 
@@ -1058,15 +1209,14 @@ def _max_layer_compute_latencies_ns_legacy(
     hardware: HardwareConfig,
     l_prompt: int,
 ) -> tuple[float, float, float]:
-    macs = _mac_counts_per_token(model, l_prompt)
-    digital_costs = _digital_costs_legacy(hardware)
-    digital_stages = DIGITAL_STAGES if hardware.memory is None else tuple(s for s in DIGITAL_STAGES if s != "kv_cache")
+    analog_macs = _analog_macs_per_token(model)
+    dpu_feature_ops = _dpu_feature_ops_per_token(model, l_prompt)
+    dpu_feature_costs, _mapping = _dpu_feature_costs_legacy(hardware)
+    enabled_dpu_features = (
+        DPU_FEATURES if hardware.memory is None else tuple(feature for feature in DPU_FEATURES if feature != "kv_cache_update")
+    )
     analog_outputs = {s: sum(m_out for m_out, _n_in in shapes) for s, shapes in _analog_stage_shapes(model).items()}
     buf_knobs = hardware.soc.buffers_add
-
-    def stage_energy_latency(stage: str, energy_per_mac: float, latency_per_mac: float) -> tuple[float, float]:
-        m = macs[stage]
-        return (m * energy_per_mac, m * latency_per_mac)
 
     ctrl_e_tok = hardware.soc.control.energy_pj_per_token
     ctrl_t_tok = hardware.soc.control.latency_ns_per_token
@@ -1088,19 +1238,21 @@ def _max_layer_compute_latencies_ns_legacy(
 
         for block, executed_precision in {"qkv": policy.qkv, "wo": policy.wo, "ffn": policy.ffn}.items():
             e_per, t_per = _analog_cost_for_block(hardware, executed_precision)
-            e, t = stage_energy_latency(block, e_per, t_per)
-            draft = draft.add_energy_latency(block, e, t)
+            draft = draft.add_energy_latency(block, analog_macs[block] * e_per, analog_macs[block] * t_per)
 
             assert hardware.costs is not None
-            e_full, t_full = stage_energy_latency(
+            verify_bonus = verify_bonus.add_energy_latency(
                 block,
-                hardware.costs.analog_full.energy_pj_per_mac,
-                hardware.costs.analog_full.latency_ns_per_mac,
+                analog_macs[block] * hardware.costs.analog_full.energy_pj_per_mac,
+                analog_macs[block] * hardware.costs.analog_full.latency_ns_per_mac,
             )
-            verify_bonus = verify_bonus.add_energy_latency(block, e_full, t_full)
 
             e_add, t_add = _verify_additional_cost_for_block(hardware, executed_precision, token_kind="drafted")
-            verify_drafted = verify_drafted.add_energy_latency(block, macs[block] * e_add, macs[block] * t_add)
+            verify_drafted = verify_drafted.add_energy_latency(
+                block,
+                analog_macs[block] * e_add,
+                analog_macs[block] * t_add,
+            )
 
             outputs = float(analog_outputs[block])
             if hardware.reuse_policy == ReusePolicy.reuse:
@@ -1142,12 +1294,16 @@ def _max_layer_compute_latencies_ns_legacy(
                         2.0 * outputs * buf_knobs.latency_ns_per_op,
                     )
 
-        for stage in digital_stages:
-            e_per, t_per = digital_costs[stage]
-            e, t = stage_energy_latency(stage, e_per, t_per)
-            draft = draft.add_energy_latency(stage, e, t)
-            verify_drafted = verify_drafted.add_energy_latency(stage, e, t)
-            verify_bonus = verify_bonus.add_energy_latency(stage, e, t)
+        for feature in enabled_dpu_features:
+            e_per, t_per = dpu_feature_costs[feature]
+            ops = float(dpu_feature_ops[feature])
+            parallel_units = hardware.soc.attention_cim_units if feature in {"attention_qk", "attention_pv"} else 1
+            energy = ops * e_per
+            latency = (ops * t_per) / float(max(parallel_units, 1))
+            stage = DPU_STAGE_BY_FEATURE[feature]
+            draft = draft.add_energy_latency(stage, energy, latency)
+            verify_drafted = verify_drafted.add_energy_latency(stage, energy, latency)
+            verify_bonus = verify_bonus.add_energy_latency(stage, energy, latency)
 
         draft = draft.add_energy_latency("control", ctrl_e_tok, ctrl_t_tok)
         verify_drafted = verify_drafted.add_energy_latency("control", ctrl_e_tok, ctrl_t_tok)
@@ -1169,6 +1325,59 @@ def _baseline_stats() -> SpeculationStats:
     return SpeculationStats(k=0, histogram={0: 1.0})
 
 
+def _sum_breakdowns(lhs: Breakdown, rhs: Breakdown) -> Breakdown:
+    stages = lhs.stages.plus(rhs.stages)
+
+    components = None
+    if lhs.components is not None and rhs.components is not None:
+        components = lhs.components.plus(rhs.components)
+    elif lhs.components is not None:
+        components = lhs.components
+    elif rhs.components is not None:
+        components = rhs.components
+
+    activation_counts = None
+    if lhs.activation_counts is not None and rhs.activation_counts is not None:
+        activation_counts = lhs.activation_counts.plus(rhs.activation_counts)
+    elif lhs.activation_counts is not None:
+        activation_counts = lhs.activation_counts
+    elif rhs.activation_counts is not None:
+        activation_counts = rhs.activation_counts
+
+    memory_traffic = None
+    if lhs.memory_traffic is not None and rhs.memory_traffic is not None:
+        memory_traffic = lhs.memory_traffic.plus(rhs.memory_traffic)
+    elif lhs.memory_traffic is not None:
+        memory_traffic = lhs.memory_traffic
+    elif rhs.memory_traffic is not None:
+        memory_traffic = rhs.memory_traffic
+
+    dpu_features = None
+    if lhs.dpu_features is not None and rhs.dpu_features is not None:
+        dpu_features = lhs.dpu_features.plus(rhs.dpu_features)
+    elif lhs.dpu_features is not None:
+        dpu_features = lhs.dpu_features
+    elif rhs.dpu_features is not None:
+        dpu_features = rhs.dpu_features
+
+    channels = None
+    if lhs.channels is not None and rhs.channels is not None:
+        channels = lhs.channels.plus(rhs.channels)
+    elif lhs.channels is not None:
+        channels = lhs.channels
+    elif rhs.channels is not None:
+        channels = rhs.channels
+
+    return Breakdown.from_stage_breakdown(
+        stages,
+        components=components,
+        activation_counts=activation_counts,
+        memory_traffic=memory_traffic,
+        dpu_features=dpu_features,
+        channels=channels,
+    )
+
+
 def estimate_point(
     model: ModelConfig,
     hardware: HardwareConfig,
@@ -1185,16 +1394,33 @@ def estimate_point(
             )
 
     if hardware.mode == HardwareMode.legacy:
-        draft_step, verify_full_step = _token_step_costs_legacy(model, hardware, l_prompt)
-        verify_drafted_additional = _verify_drafted_token_additional_stage_legacy(model, hardware, l_prompt)
+        draft_template, _verify_bonus_template = _token_step_costs_legacy(model, hardware, l_prompt)
+        verify_drafted_template = _verify_drafted_token_additional_stage_legacy(model, hardware, l_prompt)
+
+        def step_costs(context_len: int) -> tuple[Breakdown, Breakdown, Breakdown]:
+            draft_step, verify_full_step = _token_step_costs_legacy(model, hardware, context_len)
+            verify_drafted_step = _verify_drafted_token_additional_stage_legacy(model, hardware, context_len)
+            return draft_step, verify_drafted_step, verify_full_step
+
     else:
         specs = hardware.resolve_knob_specs()
-        draft_step, verify_full_step = _token_step_costs_knob(model, hardware, specs, l_prompt)
-        verify_drafted_additional = _verify_drafted_token_additional_stage_knob(model, hardware, specs, l_prompt)
+        draft_template, _verify_bonus_template = _token_step_costs_knob(model, hardware, specs, l_prompt)
+        verify_drafted_template = _verify_drafted_token_additional_stage_knob(model, hardware, specs, l_prompt)
 
-    draft_phase = draft_step.scale(stats.k)
-    verify_drafted_phase = verify_drafted_additional.scale(stats.k)
-    verify_bonus_phase = verify_full_step
+        def step_costs(context_len: int) -> tuple[Breakdown, Breakdown, Breakdown]:
+            draft_step, verify_full_step = _token_step_costs_knob(model, hardware, specs, context_len)
+            verify_drafted_step = _verify_drafted_token_additional_stage_knob(model, hardware, specs, context_len)
+            return draft_step, verify_drafted_step, verify_full_step
+
+    draft_phase = draft_template.scale(0.0)
+    verify_drafted_phase = verify_drafted_template.scale(0.0)
+    for i in range(stats.k):
+        context_len = l_prompt + i
+        draft_step_i, verify_drafted_step_i, _verify_full_step_i = step_costs(context_len)
+        draft_phase = _sum_breakdowns(draft_phase, draft_step_i)
+        verify_drafted_phase = _sum_breakdowns(verify_drafted_phase, verify_drafted_step_i)
+
+    _, _, verify_bonus_phase = step_costs(l_prompt + stats.k)
 
     if hardware.memory is not None:
         traffic = _kv_memory_traffic_by_phase(model=model, hardware=hardware, stats=stats, l_prompt=l_prompt)
@@ -1210,44 +1436,7 @@ def estimate_point(
             hardware=hardware,
         )
 
-    total_stages = draft_phase.stages.plus(verify_drafted_phase.stages).plus(verify_bonus_phase.stages)
-
-    total_components = None
-    if (
-        draft_phase.components is not None
-        and verify_drafted_phase.components is not None
-        and verify_bonus_phase.components is not None
-    ):
-        total_components = (
-            draft_phase.components.plus(verify_drafted_phase.components).plus(verify_bonus_phase.components)
-        )
-
-    total_activation_counts = None
-    if (
-        draft_phase.activation_counts is not None
-        and verify_drafted_phase.activation_counts is not None
-        and verify_bonus_phase.activation_counts is not None
-    ):
-        total_activation_counts = (
-            draft_phase.activation_counts.plus(verify_drafted_phase.activation_counts).plus(verify_bonus_phase.activation_counts)
-        )
-
-    total_memory_traffic = None
-    if (
-        draft_phase.memory_traffic is not None
-        and verify_drafted_phase.memory_traffic is not None
-        and verify_bonus_phase.memory_traffic is not None
-    ):
-        total_memory_traffic = (
-            draft_phase.memory_traffic.plus(verify_drafted_phase.memory_traffic).plus(verify_bonus_phase.memory_traffic)
-        )
-
-    total_phase = Breakdown.from_stage_breakdown(
-        total_stages,
-        components=total_components,
-        activation_counts=total_activation_counts,
-        memory_traffic=total_memory_traffic,
-    )
+    total_phase = _sum_breakdowns(_sum_breakdowns(draft_phase, verify_drafted_phase), verify_bonus_phase)
 
     e_burst = total_phase.energy_pj
     t_burst = total_phase.latency_ns
@@ -1396,6 +1585,12 @@ def estimate_sweep(
     ):
         hardware_knobs["soc"] = hardware.soc.model_dump(mode="json")
 
+    if hardware.mode == HardwareMode.legacy:
+        _, dpu_feature_mapping = _dpu_feature_costs_legacy(hardware)
+    else:
+        specs = hardware.resolve_knob_specs()
+        _, dpu_feature_mapping = _dpu_feature_costs_knob(specs)
+
     return Report(
         generated_at=datetime.now(timezone.utc).isoformat(),
         k=stats.k,
@@ -1409,9 +1604,12 @@ def estimate_sweep(
         break_even_tokens_per_joule_l_prompt=break_even,
         area=_area_mm2(model, hardware),
         area_breakdown_mm2=_area_breakdown_mm2(model, hardware),
+        dpu_feature_mapping=dpu_feature_mapping,
+        movement_accounting=MOVEMENT_ACCOUNTING_COVERAGE,
         notes=[
             "Analytical calculator (closed-form activation counts, no event simulation).",
             "No early-stop on mismatch; verifier suffix work is still charged.",
             "Breakdown latencies are serialized sums; `soc.schedule` affects how latency/token is reported.",
+            "Movement exclusions are explicit in `movement_accounting.excluded`.",
         ],
     )

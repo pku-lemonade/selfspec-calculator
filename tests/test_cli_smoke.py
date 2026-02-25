@@ -23,7 +23,8 @@ def test_cli_runs_on_knob_examples(capsys) -> None:
 
     out = capsys.readouterr().out
     payload = json.loads(out)
-    assert payload["k"] == 4
+    expected_k = json.loads((repo_root / "examples" / "stats.json").read_text(encoding="utf-8"))["k"]
+    assert payload["k"] == expected_k
     assert payload["reuse_policy"] in {"reuse", "reread"}
     assert payload["hardware_mode"] == "knob-based"
     assert payload["resolved_library"] is not None

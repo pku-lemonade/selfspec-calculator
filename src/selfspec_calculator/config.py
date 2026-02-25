@@ -103,6 +103,24 @@ class PerWeightArea(BaseModel):
     area_mm2_per_weight: float = Field(..., ge=0.0)
 
 
+class DpuFeatureCostOverrides(BaseModel):
+    attention_qk: PerMacCost | None = None
+    attention_softmax: PerMacCost | None = None
+    attention_pv: PerMacCost | None = None
+    ffn_activation: PerMacCost | None = None
+    ffn_gate_multiply: PerMacCost | None = None
+    kv_cache_update: PerMacCost | None = None
+
+
+class DpuFeatureCosts(BaseModel):
+    attention_qk: PerMacCost
+    attention_softmax: PerMacCost
+    attention_pv: PerMacCost
+    ffn_activation: PerMacCost
+    ffn_gate_multiply: PerMacCost
+    kv_cache_update: PerMacCost
+
+
 class HardwareCosts(BaseModel):
     analog_draft: PerMacCost
     analog_full: PerMacCost
@@ -111,6 +129,7 @@ class HardwareCosts(BaseModel):
     digital_softmax: PerMacCost
     digital_elementwise: PerMacCost
     kv_cache: PerMacCost
+    digital_features: DpuFeatureCostOverrides | None = None
     analog_weight_area: PerWeightArea
     digital_overhead_area_mm2_per_layer: float = Field(0.0, ge=0.0)
 
@@ -235,7 +254,67 @@ class DigitalCostDefaults(BaseModel):
     softmax: PerMacCost
     elementwise: PerMacCost
     kv_cache: PerMacCost
+    features: DpuFeatureCostOverrides | None = None
     digital_overhead_area_mm2_per_layer: float = Field(0.0, ge=0.0)
+
+    def resolve_feature_costs(self) -> tuple[DpuFeatureCosts, dict[str, str]]:
+        overrides = self.features or DpuFeatureCostOverrides()
+        mapping: dict[str, str] = {}
+
+        def pick(
+            *,
+            feature: str,
+            explicit: PerMacCost | None,
+            fallback: PerMacCost,
+            fallback_source: str,
+        ) -> PerMacCost:
+            if explicit is not None:
+                mapping[feature] = f"explicit:digital.features.{feature}"
+                return explicit
+            mapping[feature] = f"mapped:{fallback_source}"
+            return fallback
+
+        return (
+            DpuFeatureCosts(
+                attention_qk=pick(
+                    feature="attention_qk",
+                    explicit=overrides.attention_qk,
+                    fallback=self.attention,
+                    fallback_source="digital.attention",
+                ),
+                attention_softmax=pick(
+                    feature="attention_softmax",
+                    explicit=overrides.attention_softmax,
+                    fallback=self.softmax,
+                    fallback_source="digital.softmax",
+                ),
+                attention_pv=pick(
+                    feature="attention_pv",
+                    explicit=overrides.attention_pv,
+                    fallback=self.attention,
+                    fallback_source="digital.attention",
+                ),
+                ffn_activation=pick(
+                    feature="ffn_activation",
+                    explicit=overrides.ffn_activation,
+                    fallback=self.elementwise,
+                    fallback_source="digital.elementwise",
+                ),
+                ffn_gate_multiply=pick(
+                    feature="ffn_gate_multiply",
+                    explicit=overrides.ffn_gate_multiply,
+                    fallback=self.elementwise,
+                    fallback_source="digital.elementwise",
+                ),
+                kv_cache_update=pick(
+                    feature="kv_cache_update",
+                    explicit=overrides.kv_cache_update,
+                    fallback=self.kv_cache,
+                    fallback_source="digital.kv_cache",
+                ),
+            ),
+            mapping,
+        )
 
 
 class ResolvedKnobSpecs(BaseModel):
@@ -595,11 +674,14 @@ class HardwareConfig(BaseModel):
         if self.mode != HardwareMode.knob_based:
             return None
         specs = self.resolve_knob_specs()
+        _resolved_feature_costs, feature_mapping = specs.digital.resolve_feature_costs()
         payload: dict[str, Any] = {
             "name": specs.library,
             "dac": {"bits": specs.dac_bits, **specs.dac.model_dump(mode="json")},
             "adc_draft": {"bits": specs.adc_draft_bits, **specs.adc_draft.model_dump(mode="json")},
             "adc_residual": {"bits": specs.adc_residual_bits, **specs.adc_residual.model_dump(mode="json")},
+            "digital": specs.digital.model_dump(mode="json"),
+            "digital_feature_mapping": feature_mapping,
         }
         lib = self.runtime_libraries().get(specs.library)
         if lib is not None:

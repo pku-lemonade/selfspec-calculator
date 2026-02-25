@@ -94,11 +94,17 @@ analog:
     write_drivers: {}
 ```
 
+Digital library schema:
+- Coarse coefficients remain supported: `digital.attention`, `digital.softmax`, `digital.elementwise`, `digital.kv_cache`.
+- Optional feature-level coefficients may be provided in `digital.features.*`:
+  - `attention_qk`, `attention_softmax`, `attention_pv`, `ffn_activation`, `ffn_gate_multiply`, `kv_cache_update`.
+- If a feature coefficient is missing, the calculator applies deterministic compatibility mapping from the coarse fields.
+
 Examples:
 - `examples/hardware_soc_memory.yaml` (SRAM + HBM + fabric KV-cache model)
 - `examples/hardware_analog_periphery.yaml` (non-zero analog periphery + buffers/control)
 - `examples/hardware_soc_area.yaml` (component area breakdown; off-chip HBM area reported separately)
-- `examples/hardware_custom_library.yaml` (custom JSON library source via `library_file`)
+- `examples/hardware_custom_library.yaml` (custom JSON library source via `library_file`, including explicit `digital.features.*`)
 
 Validation rules:
 - `xbar_size`, `num_columns_per_adc`, `dac_bits`, `draft_bits`, and `residual_bits` must be positive integers.
@@ -131,6 +137,13 @@ The JSON report includes:
 - component-level breakdown (`arrays`, `dac`, `adc_draft`, `adc_residual`, attention/digital components),
 - optional SoC components (`buffers_add`, `control`, and analog periphery blocks),
 - optional memory components (`sram`, `hbm`, `fabric`) and `memory_traffic` bytes,
+- DPU feature subtotals per phase (`dpu_features`) with independent latency/energy for:
+  - attention (`attention_qk`, `attention_softmax`, `attention_pv`)
+  - FFN digital work (`ffn_activation`, `ffn_gate_multiply`)
+  - KV update (`kv_cache_update`, when memory model is disabled)
+- compute-vs-movement channel totals (`channels`) for each phase,
+- DPU compatibility provenance (`dpu_feature_mapping`) indicating `explicit:*` vs `mapped:*` feature coefficients,
+- movement coverage metadata (`movement_accounting`) with modeled/proxy/excluded movement items and ownership rules,
 - resolved library entries (for knob-based runs),
 - analog activation counts (`dac_conversions`, `adc_*_conversions`, etc.) for knob-based runs,
 - baseline/delta and break-even fields compatible with previous outputs.
@@ -142,12 +155,19 @@ The JSON report includes:
 
 - This project is an analytical calculator (closed-form counting), not an event/instruction simulator.
 - No early-stop on mismatch (wasted verifier suffix work is still charged).
+- Serialized phase accounting is step-indexed:
+  - draft and verify-drafted steps use `L_i = L_prompt + i` for `i = 0..K-1`,
+  - verify-bonus uses `L_prompt + K`.
 - `soc.schedule` affects how `latency_ns_per_token` is reported:
   - `serialized`: end-to-end serialized time per committed token.
   - `layer-pipelined`: steady-state token period bounded by the slowest layer-stage and shared resources (e.g., memory bandwidth/latency).
+- DPU feature coefficients support backward-compatible fallback:
+  - missing `digital.features.*` entries are mapped from coarse digital coefficients.
 - When `memory` is configured:
   - HBM KV reads are not mismatch-gated in v1.
   - HBM KV writes are commit-only (Policy B).
+  - ownership rule: KV update compute is excluded from DPU features and owned by movement accounting (`kv_cache` stage + `sram/hbm/fabric` components).
+  - non-KV intermediate movement is currently excluded and explicitly reported under `movement_accounting.excluded`.
   - Optional capacity check: when `memory.kv_cache.max_context_tokens` is set, sweeps must satisfy `L_prompt + K <= max_context_tokens`.
 - Full-read dual-ADC latency uses parallel timing:
   - energy sums ADC-Draft + ADC-Residual,

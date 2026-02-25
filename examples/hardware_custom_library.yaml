@@ -1,5 +1,6 @@
 reuse_policy: reuse
 library: puma_like_v1
+# This example library includes explicit `digital.features.*` DPU coefficients.
 library_file: library_custom_minimal.json
 
 analog:
