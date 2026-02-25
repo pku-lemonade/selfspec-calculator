@@ -393,10 +393,85 @@
   },
   "science_adi9405_v1_neurosim": {
     "adc": {
+      "1": {
+        "area_mm2_per_unit": 0.000472784375,
+        "energy_pj_per_conversion": 0.703974609375,
+        "latency_ns_per_conversion": 3.2868515625
+      },
+      "2": {
+        "area_mm2_per_unit": 0.000713578125,
+        "energy_pj_per_conversion": 0.7316015625,
+        "latency_ns_per_conversion": 3.30043359375
+      },
+      "3": {
+        "area_mm2_per_unit": 0.000965334375,
+        "energy_pj_per_conversion": 0.7706884765625,
+        "latency_ns_per_conversion": 3.324328125
+      },
+      "4": {
+        "area_mm2_per_unit": 0.0012805875,
+        "energy_pj_per_conversion": 0.83214599609375,
+        "latency_ns_per_conversion": 3.3684765625
+      },
       "5": {
         "area_mm2_per_unit": 0.001712775,
-        "energy_pj_per_conversion": 1.75,
-        "latency_ns_per_conversion": 3.9596484375
+        "energy_pj_per_conversion": 0.946708984375,
+        "latency_ns_per_conversion": 3.453421875
+      },
+      "6": {
+        "area_mm2_per_unit": 0.002375603125,
+        "energy_pj_per_conversion": 1.17165283203125,
+        "latency_ns_per_conversion": 3.62078515625
+      },
+      "7": {
+        "area_mm2_per_unit": 0.00435021875,
+        "energy_pj_per_conversion": 1.61945556640625,
+        "latency_ns_per_conversion": 3.9538671875
+      },
+      "8": {
+        "area_mm2_per_unit": 0.00659796875,
+        "energy_pj_per_conversion": 2.514013671875,
+        "latency_ns_per_conversion": 4.6190625
+      },
+      "9": {
+        "area_mm2_per_unit": 0.012855875,
+        "energy_pj_per_conversion": 4.3026123046875,
+        "latency_ns_per_conversion": 5.94890625
+      },
+      "10": {
+        "area_mm2_per_unit": 0.025589,
+        "energy_pj_per_conversion": 7.879541015625,
+        "latency_ns_per_conversion": 8.608359375
+      },
+      "11": {
+        "area_mm2_per_unit": 0.0531146875,
+        "energy_pj_per_conversion": 15.0332763671875,
+        "latency_ns_per_conversion": 13.927109375
+      },
+      "12": {
+        "area_mm2_per_unit": 0.107434375,
+        "energy_pj_per_conversion": 29.340576171875,
+        "latency_ns_per_conversion": 24.56453125
+      },
+      "13": {
+        "area_mm2_per_unit": 0.217914375,
+        "energy_pj_per_conversion": 57.95556640625,
+        "latency_ns_per_conversion": 45.839453125
+      },
+      "14": {
+        "area_mm2_per_unit": 0.44255625,
+        "energy_pj_per_conversion": 115.18505859375,
+        "latency_ns_per_conversion": 88.3890625
+      },
+      "15": {
+        "area_mm2_per_unit": 0.899203125,
+        "energy_pj_per_conversion": 229.64404296875,
+        "latency_ns_per_conversion": 173.48828125
+      },
+      "16": {
+        "area_mm2_per_unit": 1.827228125,
+        "energy_pj_per_conversion": 458.56201171875,
+        "latency_ns_per_conversion": 343.68671875
       }
     },
     "analog_periphery": {
@@ -535,9 +610,7 @@
       }
     },
     "source_map": {
-      "adc.5.area_mm2_per_unit": "neurosim (65nm): ../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM main output (Chip ADC area) normalized by estimated ADC units",
-      "adc.5.energy_pj_per_conversion": "science-paper: reference/science.adi9405_sm.pdf (ADC energy assumption = 1.75 pJ/sample)",
-      "adc.5.latency_ns_per_conversion": "neurosim (65nm): ../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM main output (ADC latency) normalized by read*scan steps",
+      "adc.*": "neurosim (65nm, MLSA+VSA sweep): ../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM main output swept with levelOutput=2^bits for bits 1..16; normalized as area_mm2_per_unit=chip_adc_area_um2/(32*1e6), energy_pj_per_conversion=chip_adc_energy_pj/4096, latency_ns_per_conversion=chip_adc_latency_ns/256",
       "array.area_mm2_per_array": "neurosim (65nm): ../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM main output (Chip total CIM array area) divided by modeled array count",
       "array.area_mm2_per_weight": "neurosim (65nm): ../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM main output (Chip total CIM array area) with synthetic layer weight count",
       "array.arrays_per_weight": "design-assumption: each logical weight uses 4 cells in 4 arrays",
@@ -549,7 +622,7 @@
       "analog_periphery.mux.*": "neurosim-proxy (65nm): residual Other-periphery bucket from ../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM main output",
       "analog_periphery.subarray_switches.*": "neurosim-proxy (65nm): residual Other-periphery bucket from ../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM main output",
       "analog_periphery.write_drivers.*": "neurosim-proxy (65nm): residual Other-periphery bucket from ../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM main output",
-      "dac.*": "placeholder: copied from puma_like_v1 defaults",
+      "dac.*": "placeholder (no standalone DAC coefficient export in this NeuroSim flow): copied from puma_like_v1 defaults",
       "digital.*": "placeholder: copied from puma_like_v1 defaults",
       "soc.*": "placeholder: copied from science_soc_v1 defaults",
       "memory.sram.*": "cacti: ../cacti with reference/cacti/science_adi9405_v1_sram.cfg (cache type=ram, 2MiB, 64B block, 65nm); converted read/write nJ per access to pJ/byte by dividing by 64B; bandwidth from block_size/cycle_time; area from data-array area",
@@ -560,6 +633,8 @@
       "neurosim_run_used": "./main /tmp/ns_net_fill2.csv 1 1 128 128 /tmp/ns_w_fill2.csv /tmp/ns_i_fill2.csv",
       "neurosim_technode_nm": 65,
       "neurosim_output_used": "reference/neurosim/science_adi9405_v1_neurosim_65nm_fill2.out.txt",
+      "neurosim_adc_sweep_mode": "MLSA+VSA (SARADC=false, currentMode=false), levelOutput=2^bits for bits 1..16",
+      "neurosim_adc_sweep_output": "reference/neurosim/science_adi9405_v1_neurosim_65nm_adc_sweep_mlsa_vsa.json",
       "neurosim_repo": "../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM",
       "cacti_repo": "../cacti",
       "cacti_runs_used": [
