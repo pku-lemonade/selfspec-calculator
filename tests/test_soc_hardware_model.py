@@ -1,7 +1,7 @@
 import pytest
 
 from selfspec_calculator.config import HardwareConfig, ModelConfig
-from selfspec_calculator.estimator import estimate_point
+from selfspec_calculator.estimator import estimate_point, estimate_sweep
 from selfspec_calculator.stats import SpeculationStats
 
 
@@ -272,6 +272,39 @@ def test_verify_setup_is_charged_once_per_burst() -> None:
 
     assert b1.verify_bonus.stages.control_latency_ns == pytest.approx(b4.verify_bonus.stages.control_latency_ns)
     assert b1.verify_bonus.stages.control_latency_ns == pytest.approx(model.n_layers * 100.0)
+
+
+def test_attention_cim_units_scale_qk_pv_latency_and_area() -> None:
+    model = ModelConfig.model_validate(BASE_MODEL)
+    stats = SpeculationStats(k=1, histogram={0: 1.0})
+
+    hw1 = _base_knob_hardware(soc={"attention_cim_units": 1})
+    hw8 = _base_knob_hardware(soc={"attention_cim_units": 8})
+
+    _, b1 = estimate_point(model=model, hardware=hw1, stats=stats, l_prompt=64)
+    _, b8 = estimate_point(model=model, hardware=hw8, stats=stats, l_prompt=64)
+
+    # QK/PV are mapped to SRAM-CIM attention units: latency scales with unit count,
+    # while energy remains per-MAC.
+    assert b8.draft.stages.qk_latency_ns == pytest.approx(b1.draft.stages.qk_latency_ns / 8.0)
+    assert b8.draft.stages.pv_latency_ns == pytest.approx(b1.draft.stages.pv_latency_ns / 8.0)
+    assert b8.draft.stages.qk_energy_pj == pytest.approx(b1.draft.stages.qk_energy_pj)
+    assert b8.draft.stages.pv_energy_pj == pytest.approx(b1.draft.stages.pv_energy_pj)
+
+    specs = hw1.resolve_knob_specs()
+    assert hw1.analog is not None
+    unit_area = (
+        specs.array.area_mm2_per_array
+        if specs.array.area_mm2_per_array is not None and specs.array.area_mm2_per_array > 0.0
+        else specs.array.area_mm2_per_weight * float(hw1.analog.xbar_size * hw1.analog.xbar_size)
+    )
+    expected_delta = float(model.n_layers) * (8.0 - 1.0) * float(unit_area)
+
+    r1 = estimate_sweep(model=model, hardware=hw1, stats=stats, prompt_lengths=[64]).model_dump(mode="json")
+    r8 = estimate_sweep(model=model, hardware=hw8, stats=stats, prompt_lengths=[64]).model_dump(mode="json")
+    d1 = r1["area_breakdown_mm2"]["on_chip_components"]["digital_overhead_mm2"]
+    d8 = r8["area_breakdown_mm2"]["on_chip_components"]["digital_overhead_mm2"]
+    assert d8 - d1 == pytest.approx(expected_delta)
 
 
 def test_max_context_tokens_enforced_when_set() -> None:

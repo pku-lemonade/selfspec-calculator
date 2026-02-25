@@ -57,6 +57,7 @@ Optional SoC extensions (all optional; default to zero/disabled so older configs
 ```yaml
 soc:
   schedule: serialized  # or: layer-pipelined
+  attention_cim_units: 1  # parallel SRAM-CIM units for QK/PV digital attention stages
   verify_setup:
     energy_pj_per_burst: 0.0  # optional override (otherwise resolved from library, if available)
     latency_ns_per_burst: 0.0 # optional override (otherwise resolved from library, if available)

@@ -394,46 +394,46 @@
   "science_adi9405_v1_neurosim": {
     "adc": {
       "5": {
-        "area_mm2_per_unit": 0.000203025,
+        "area_mm2_per_unit": 0.001712775,
         "energy_pj_per_conversion": 1.75,
-        "latency_ns_per_conversion": 0.424352
+        "latency_ns_per_conversion": 3.9596484375
       }
     },
     "analog_periphery": {
       "io_buffers": {
-        "area_mm2_per_unit": 0.000242661,
-        "energy_pj_per_op": 0.0247896,
-        "latency_ns_per_op": 28.3785
+        "area_mm2_per_unit": 0.002179634736402568,
+        "energy_pj_per_op": 0.33363415023351967,
+        "latency_ns_per_op": 264.8006988131393
       },
       "mux": {
-        "area_mm2_per_unit": 0.000182299,
-        "energy_pj_per_op": 0.0186231,
-        "latency_ns_per_op": 0.0884115
+        "area_mm2_per_unit": 0.0016374499108280757,
+        "energy_pj_per_op": 0.2506414844617848,
+        "latency_ns_per_op": 0.824970558102714
       },
       "snh": {
-        "area_mm2_per_unit": 0.000101512,
-        "energy_pj_per_op": 0.102892,
-        "latency_ns_per_op": 0.212176
+        "area_mm2_per_unit": 0.0008563875,
+        "energy_pj_per_op": 0.507938232421875,
+        "latency_ns_per_op": 1.97982421875
       },
       "subarray_switches": {
-        "area_mm2_per_unit": 0.00583355,
-        "energy_pj_per_op": 0.59594,
-        "latency_ns_per_op": 0.707292
+        "area_mm2_per_unit": 0.052398235466519956,
+        "energy_pj_per_op": 8.020538269684211,
+        "latency_ns_per_op": 6.599764464821712
       },
       "tia": {
-        "area_mm2_per_unit": 0.000101512,
-        "energy_pj_per_op": 0.102892,
-        "latency_ns_per_op": 0.212176
+        "area_mm2_per_unit": 0.0008563875,
+        "energy_pj_per_op": 0.507938232421875,
+        "latency_ns_per_op": 1.97982421875
       },
       "write_drivers": {
-        "area_mm2_per_unit": 4.55746e-05,
-        "energy_pj_per_op": 0.0186231,
-        "latency_ns_per_op": 0.0884115
+        "area_mm2_per_unit": 0.0004093611303738651,
+        "energy_pj_per_op": 0.2506414844617848,
+        "latency_ns_per_op": 0.824970558102714
       }
     },
     "array": {
-      "area_mm2_per_array": 0.00444072,
-      "area_mm2_per_weight": 2.7104e-07,
+      "area_mm2_per_array": 0.03876455,
+      "area_mm2_per_weight": 2.3660003662109376e-06,
       "arrays_per_weight": 4,
       "energy_pj_per_activation": 0.0025,
       "latency_ns_per_activation": 10.0
@@ -500,22 +500,22 @@
         "write_latency_ns": 10.0
       },
       "hbm": {
-        "area_mm2": 10.0,
-        "read_bandwidth_GBps": 1000.0,
-        "read_energy_pj_per_byte": 28.5714285714,
-        "read_latency_ns": 100.0,
-        "write_bandwidth_GBps": 1000.0,
-        "write_energy_pj_per_byte": 2.0,
-        "write_latency_ns": 200.0
+        "area_mm2": 5916.6,
+        "read_bandwidth_GBps": 0.59321,
+        "read_energy_pj_per_byte": 1970.78,
+        "read_latency_ns": 75.3615,
+        "write_bandwidth_GBps": 0.59321,
+        "write_energy_pj_per_byte": 1972.75,
+        "write_latency_ns": 75.3615
       },
       "sram": {
-        "area_mm2": 2.0,
-        "read_bandwidth_GBps": 2000.0,
-        "read_energy_pj_per_byte": 0.1,
-        "read_latency_ns": 5.0,
-        "write_bandwidth_GBps": 2000.0,
-        "write_energy_pj_per_byte": 0.2,
-        "write_latency_ns": 5.0
+        "area_mm2": 18.5478,
+        "read_bandwidth_GBps": 22.0923,
+        "read_energy_pj_per_byte": 16.6539,
+        "read_latency_ns": 3.80895,
+        "write_bandwidth_GBps": 22.0923,
+        "write_energy_pj_per_byte": 18.1902,
+        "write_latency_ns": 3.80895
       }
     },
     "soc": {
@@ -535,31 +535,51 @@
       }
     },
     "source_map": {
-      "adc.5.area_mm2_per_unit": "neurosim: ../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM main output (Chip ADC area) normalized by estimated ADC units",
+      "adc.5.area_mm2_per_unit": "neurosim (65nm): ../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM main output (Chip ADC area) normalized by estimated ADC units",
       "adc.5.energy_pj_per_conversion": "science-paper: reference/science.adi9405_sm.pdf (ADC energy assumption = 1.75 pJ/sample)",
-      "adc.5.latency_ns_per_conversion": "neurosim: ../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM main output (ADC latency) normalized by read*scan steps",
-      "array.area_mm2_per_array": "neurosim: ../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM main output (Chip total CIM array area) divided by modeled array count",
-      "array.area_mm2_per_weight": "neurosim: ../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM main output (Chip total CIM array area) with synthetic layer weight count",
+      "adc.5.latency_ns_per_conversion": "neurosim (65nm): ../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM main output (ADC latency) normalized by read*scan steps",
+      "array.area_mm2_per_array": "neurosim (65nm): ../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM main output (Chip total CIM array area) divided by modeled array count",
+      "array.area_mm2_per_weight": "neurosim (65nm): ../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM main output (Chip total CIM array area) with synthetic layer weight count",
       "array.arrays_per_weight": "design-assumption: each logical weight uses 4 cells in 4 arrays",
       "array.energy_pj_per_activation": "science-paper: reference/science.adi9405_sm.pdf V^2/R*t derivation (0.05V, 10kOhm, 10ns)",
       "array.latency_ns_per_activation": "science-paper: reference/science.adi9405_sm.pdf (10 ns per VMM)",
-      "analog_periphery.tia.*": "neurosim-proxy: ADC bucket split from ../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM main output",
-      "analog_periphery.snh.*": "neurosim-proxy: ADC bucket split from ../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM main output",
-      "analog_periphery.io_buffers.*": "neurosim-proxy: buffer latency/energy terms from ../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM main output",
-      "analog_periphery.mux.*": "neurosim-proxy: residual Other-periphery bucket from ../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM main output",
-      "analog_periphery.subarray_switches.*": "neurosim-proxy: residual Other-periphery bucket from ../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM main output",
-      "analog_periphery.write_drivers.*": "neurosim-proxy: residual Other-periphery bucket from ../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM main output",
+      "analog_periphery.tia.*": "neurosim-proxy (65nm): ADC bucket split from ../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM main output",
+      "analog_periphery.snh.*": "neurosim-proxy (65nm): ADC bucket split from ../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM main output",
+      "analog_periphery.io_buffers.*": "neurosim-proxy (65nm): buffer latency/energy terms from ../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM main output",
+      "analog_periphery.mux.*": "neurosim-proxy (65nm): residual Other-periphery bucket from ../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM main output",
+      "analog_periphery.subarray_switches.*": "neurosim-proxy (65nm): residual Other-periphery bucket from ../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM main output",
+      "analog_periphery.write_drivers.*": "neurosim-proxy (65nm): residual Other-periphery bucket from ../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM main output",
       "dac.*": "placeholder: copied from puma_like_v1 defaults",
       "digital.*": "placeholder: copied from puma_like_v1 defaults",
       "soc.*": "placeholder: copied from science_soc_v1 defaults",
-      "memory.sram.*": "placeholder: copied from science_soc_v1 defaults",
+      "memory.sram.*": "cacti: ../cacti with reference/cacti/science_adi9405_v1_sram.cfg (cache type=ram, 2MiB, 64B block, 65nm); converted read/write nJ per access to pJ/byte by dividing by 64B; bandwidth from block_size/cycle_time; area from data-array area",
       "memory.fabric.*": "placeholder: copied from science_soc_v1 defaults",
-      "memory.hbm.read_energy_pj_per_byte": "science-paper-derived: 35 GB/s/W assumption => 1e12/35e9 = 28.571 pJ/B (reference/science.adi9405_sm.pdf)",
-      "memory.hbm.*(except read_energy_pj_per_byte)": "placeholder: copied from science_soc_v1 defaults"
+      "memory.hbm.*": "cacti-dram-proxy (8GiB profile): ../cacti with reference/cacti/science_adi9405_v1_dram.cfg (cache type=main memory, comm-dram cell, 2GiB proxy, 64B block, 65nm); converted nJ/access to pJ/byte by dividing by 64B; bandwidth from block_size/cycle_time; latency from access time; area scaled 4x from 2GiB CACTI data-array area to represent 8GiB capacity"
     },
     "source_notes": {
       "neurosim_run_used": "./main /tmp/ns_net_fill2.csv 1 1 128 128 /tmp/ns_w_fill2.csv /tmp/ns_i_fill2.csv",
+      "neurosim_technode_nm": 65,
+      "neurosim_output_used": "reference/neurosim/science_adi9405_v1_neurosim_65nm_fill2.out.txt",
       "neurosim_repo": "../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM",
+      "cacti_repo": "../cacti",
+      "cacti_runs_used": [
+        "./cacti -infile reference/cacti/science_adi9405_v1_sram.cfg",
+        "./cacti -infile reference/cacti/science_adi9405_v1_dram.cfg"
+      ],
+      "cacti_configs_used": [
+        "reference/cacti/science_adi9405_v1_sram.cfg",
+        "reference/cacti/science_adi9405_v1_dram.cfg"
+      ],
+      "cacti_outputs_used": [
+        "reference/cacti/science_adi9405_v1_sram.out.txt",
+        "reference/cacti/science_adi9405_v1_dram.out.txt"
+      ],
+      "cacti_hbm_capacity_profile": "8GiB target via 2GiB CACTI proxy (4x area scaling due CACTI size limit in this build)",
+      "target_models": [
+        "qwen3-0.6b",
+        "qwen3-1.7b",
+        "llama-3.2-1b"
+      ],
       "paper_refs": [
         "reference/Programming memristor arrays with arbitrarily high precision for analog computing  Science.pdf",
         "reference/science.adi9405_sm.pdf"

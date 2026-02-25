@@ -294,6 +294,13 @@ def _legacy_components_from_stages(stages: StageBreakdown) -> ComponentBreakdown
     )
 
 
+def _attention_cim_unit_area_mm2(*, specs: ResolvedKnobSpecs, xbar_size: int) -> float:
+    if specs.array.area_mm2_per_array is not None and specs.array.area_mm2_per_array > 0.0:
+        return float(specs.array.area_mm2_per_array)
+    # Backward-compatible fallback for libraries that only provide per-weight area.
+    return float(specs.array.area_mm2_per_weight) * float(xbar_size * xbar_size)
+
+
 def _area_mm2(model: ModelConfig, hardware: HardwareConfig) -> StageBreakdown:
     if hardware.mode == HardwareMode.legacy:
         weights = _weights_per_layer(model)
@@ -304,12 +311,12 @@ def _area_mm2(model: ModelConfig, hardware: HardwareConfig) -> StageBreakdown:
         ffn = weights["ffn"] * analog_area_per_weight
         digital = hardware.costs.digital_overhead_area_mm2_per_layer
     else:
+        assert hardware.analog is not None
         specs = hardware.resolve_knob_specs()
         arrays_per_weight = float(specs.array.arrays_per_weight)
         # Preferred path: compute required array count from model shapes/xbar size
         # and multiply by physical array area when the library provides it.
         if specs.array.area_mm2_per_array is not None and specs.array.area_mm2_per_array > 0.0:
-            assert hardware.analog is not None
             tiles = _tile_counts(model, hardware.analog.xbar_size)
             qkv = float(tiles["qkv"]) * arrays_per_weight * specs.array.area_mm2_per_array
             wo = float(tiles["wo"]) * arrays_per_weight * specs.array.area_mm2_per_array
@@ -319,7 +326,11 @@ def _area_mm2(model: ModelConfig, hardware: HardwareConfig) -> StageBreakdown:
             qkv = weights["qkv"] * specs.array.area_mm2_per_weight
             wo = weights["wo"] * specs.array.area_mm2_per_weight
             ffn = weights["ffn"] * specs.array.area_mm2_per_weight
-        digital = specs.digital.digital_overhead_area_mm2_per_layer
+        attention_cim_area_per_layer = (
+            float(hardware.soc.attention_cim_units)
+            * _attention_cim_unit_area_mm2(specs=specs, xbar_size=hardware.analog.xbar_size)
+        )
+        digital = specs.digital.digital_overhead_area_mm2_per_layer + attention_cim_area_per_layer
 
     scale = model.n_layers
     return StageBreakdown(
@@ -709,9 +720,10 @@ def _add_knob_digital_stage(
     macs: int,
     energy_per_mac: float,
     latency_per_mac: float,
+    parallel_units: int = 1,
 ) -> None:
     energy = macs * energy_per_mac
-    latency = macs * latency_per_mac
+    latency = (macs * latency_per_mac) / float(max(parallel_units, 1))
     acc.add_stage(stage, energy, latency)
     if stage in {"qk", "pv"}:
         acc.add_component("attention_engine", energy, latency)
@@ -783,13 +795,22 @@ def _token_step_costs_knob(
 
         for stage in digital_stages:
             e_per, t_per = digital_costs[stage]
-            _add_knob_digital_stage(acc=draft, stage=stage, macs=macs[stage], energy_per_mac=e_per, latency_per_mac=t_per)
+            parallel_units = hardware.soc.attention_cim_units if stage in {"qk", "pv"} else 1
+            _add_knob_digital_stage(
+                acc=draft,
+                stage=stage,
+                macs=macs[stage],
+                energy_per_mac=e_per,
+                latency_per_mac=t_per,
+                parallel_units=parallel_units,
+            )
             _add_knob_digital_stage(
                 acc=verify_full,
                 stage=stage,
                 macs=macs[stage],
                 energy_per_mac=e_per,
                 latency_per_mac=t_per,
+                parallel_units=parallel_units,
             )
 
     ctrl_e_tok = model.n_layers * hardware.soc.control.energy_pj_per_token
@@ -870,12 +891,14 @@ def _verify_drafted_token_additional_stage_knob(
 
         for stage in digital_stages:
             e_per, t_per = digital_costs[stage]
+            parallel_units = hardware.soc.attention_cim_units if stage in {"qk", "pv"} else 1
             _add_knob_digital_stage(
                 acc=additional,
                 stage=stage,
                 macs=macs[stage],
                 energy_per_mac=e_per,
                 latency_per_mac=t_per,
+                parallel_units=parallel_units,
             )
 
     ctrl_e_tok = model.n_layers * hardware.soc.control.energy_pj_per_token
@@ -989,12 +1012,14 @@ def _max_layer_compute_latencies_ns_knob(
 
         for stage in digital_stages:
             e_per, t_per = digital_costs[stage]
+            parallel_units = hardware.soc.attention_cim_units if stage in {"qk", "pv"} else 1
             _add_knob_digital_stage(
                 acc=draft,
                 stage=stage,
                 macs=macs[stage],
                 energy_per_mac=e_per,
                 latency_per_mac=t_per,
+                parallel_units=parallel_units,
             )
             _add_knob_digital_stage(
                 acc=verify_drafted,
@@ -1002,6 +1027,7 @@ def _max_layer_compute_latencies_ns_knob(
                 macs=macs[stage],
                 energy_per_mac=e_per,
                 latency_per_mac=t_per,
+                parallel_units=parallel_units,
             )
             _add_knob_digital_stage(
                 acc=verify_bonus,
@@ -1009,6 +1035,7 @@ def _max_layer_compute_latencies_ns_knob(
                 macs=macs[stage],
                 energy_per_mac=e_per,
                 latency_per_mac=t_per,
+                parallel_units=parallel_units,
             )
 
         for acc in (draft, verify_drafted, verify_bonus):

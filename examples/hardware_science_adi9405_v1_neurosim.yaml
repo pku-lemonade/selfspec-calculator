@@ -4,10 +4,15 @@ library: science_adi9405_v1_neurosim
 memory:
   # Keep memory section enabled so library defaults (including placeholders) are applied.
   kv_cache:
+    max_context_tokens: 32768
     hbm:
       value_bytes_per_elem: 1
       scale_bytes: 2
       scales_per_token_per_head: 2
+
+soc:
+  # SRAM-CIM units for non-stationary attention MVMs (QK/PV), one per head at max target model head count.
+  attention_cim_units: 32
 
 analog:
   xbar_size: 128

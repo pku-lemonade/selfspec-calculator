@@ -180,6 +180,7 @@ class ControlOverheadKnobs(BaseModel):
 
 class SocKnobs(BaseModel):
     schedule: ScheduleMode = ScheduleMode.serialized
+    attention_cim_units: int = Field(1, ge=1)
     verify_setup: VerifySetupKnobs = Field(default_factory=VerifySetupKnobs)
     buffers_add: PerOpOverheadSpec = Field(default_factory=PerOpOverheadSpec)
     control: ControlOverheadKnobs = Field(default_factory=ControlOverheadKnobs)
