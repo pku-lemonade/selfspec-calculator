@@ -58,6 +58,8 @@ Optional SoC extensions (all optional; default to zero/disabled so older configs
 soc:
   schedule: serialized  # or: layer-pipelined
   attention_cim_units: 1  # parallel SRAM-CIM units for QK/PV digital attention stages
+  attention_cim_mac_area_mm2_per_unit: 0.0  # MAC logic area per attention SRAM-CIM unit (DC fill target)
+  attention_cim_storage_bits_per_element: null  # optional override; default uses model.activation_bits
   verify_setup:
     energy_pj_per_burst: 0.0  # optional override (otherwise resolved from library, if available)
     latency_ns_per_burst: 0.0 # optional override (otherwise resolved from library, if available)
@@ -73,6 +75,9 @@ memory:
   sram: {}
   hbm: {}
   fabric: {}
+  # Optional for area modeling of attention SRAM-CIM storage:
+  # sram.capacity_bytes lets the tool derive area-per-byte from CACTI-style area+capacity.
+  # If omitted, attention SRAM-CIM storage area defaults to 0.
   kv_cache:
     # Optional capacity check: enforce `L_prompt + K <= max_context_tokens` during sweeps.
     max_context_tokens: null

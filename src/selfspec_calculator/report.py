@@ -92,6 +92,8 @@ class AreaComponentsMm2(BaseModel):
     dac_mm2: float = Field(0.0, ge=0.0)
     adc_draft_mm2: float = Field(0.0, ge=0.0)
     adc_residual_mm2: float = Field(0.0, ge=0.0)
+    attention_cim_sram_mm2: float = Field(0.0, ge=0.0)
+    attention_cim_mac_mm2: float = Field(0.0, ge=0.0)
 
     tia_mm2: float = Field(0.0, ge=0.0)
     snh_mm2: float = Field(0.0, ge=0.0)

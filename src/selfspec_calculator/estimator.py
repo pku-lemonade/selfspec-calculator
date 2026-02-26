@@ -411,11 +411,28 @@ def _add_dpu_feature_stage(
     acc.add_dpu_feature(feature, ops=ops, energy_pj=energy, latency_ns=latency)
 
 
-def _attention_cim_unit_area_mm2(*, specs: ResolvedKnobSpecs, xbar_size: int) -> float:
-    if specs.array.area_mm2_per_array is not None and specs.array.area_mm2_per_array > 0.0:
-        return float(specs.array.area_mm2_per_array)
-    # Backward-compatible fallback for libraries that only provide per-weight area.
-    return float(specs.array.area_mm2_per_weight) * float(xbar_size * xbar_size)
+def _attention_cim_total_units(model: ModelConfig, hardware: HardwareConfig) -> float:
+    return float(model.n_layers) * float(hardware.soc.attention_cim_units)
+
+
+def _attention_cim_unit_mac_area_mm2(*, hardware: HardwareConfig) -> float:
+    return float(hardware.soc.attention_cim_mac_area_mm2_per_unit)
+
+
+def _attention_cim_unit_sram_area_mm2(*, model: ModelConfig, hardware: HardwareConfig) -> float:
+    if hardware.memory is None:
+        return 0.0
+    sram = hardware.memory.sram
+    if sram.area_mm2 <= 0.0 or sram.capacity_bytes is None or sram.capacity_bytes <= 0:
+        return 0.0
+    assert hardware.analog is not None
+
+    bits_per_element = hardware.soc.attention_cim_storage_bits_per_element or model.activation_bits
+    bytes_per_element = ceil(bits_per_element / 8)
+    logical_array_elements = hardware.analog.xbar_size * hardware.analog.xbar_size
+    unit_sram_bytes = logical_array_elements * bytes_per_element
+    area_per_byte = float(sram.area_mm2) / float(sram.capacity_bytes)
+    return float(unit_sram_bytes) * area_per_byte
 
 
 def _area_mm2(model: ModelConfig, hardware: HardwareConfig) -> StageBreakdown:
@@ -443,11 +460,7 @@ def _area_mm2(model: ModelConfig, hardware: HardwareConfig) -> StageBreakdown:
             qkv = weights["qkv"] * specs.array.area_mm2_per_weight
             wo = weights["wo"] * specs.array.area_mm2_per_weight
             ffn = weights["ffn"] * specs.array.area_mm2_per_weight
-        attention_cim_area_per_layer = (
-            float(hardware.soc.attention_cim_units)
-            * _attention_cim_unit_area_mm2(specs=specs, xbar_size=hardware.analog.xbar_size)
-        )
-        digital = specs.digital.digital_overhead_area_mm2_per_layer + attention_cim_area_per_layer
+        digital = specs.digital.digital_overhead_area_mm2_per_layer
 
     scale = model.n_layers
     return StageBreakdown(
@@ -466,6 +479,8 @@ def _area_breakdown_mm2(model: ModelConfig, hardware: HardwareConfig) -> AreaBre
     dac_mm2 = 0.0
     adc_draft_mm2 = 0.0
     adc_residual_mm2 = 0.0
+    attention_cim_sram_mm2 = 0.0
+    attention_cim_mac_mm2 = 0.0
 
     tia_mm2 = 0.0
     snh_mm2 = 0.0
@@ -497,6 +512,11 @@ def _area_breakdown_mm2(model: ModelConfig, hardware: HardwareConfig) -> AreaBre
         io_buffers_mm2 = adc_total_units * periph.io_buffers.area_mm2_per_unit
         subarray_switches_mm2 = tiles_total_physical * periph.subarray_switches.area_mm2_per_unit
         write_drivers_mm2 = dac_units * periph.write_drivers.area_mm2_per_unit
+        attention_cim_units_total = _attention_cim_total_units(model, hardware)
+        attention_cim_sram_mm2 = attention_cim_units_total * _attention_cim_unit_sram_area_mm2(
+            model=model, hardware=hardware
+        )
+        attention_cim_mac_mm2 = attention_cim_units_total * _attention_cim_unit_mac_area_mm2(hardware=hardware)
 
     sram_mm2 = 0.0
     fabric_mm2 = 0.0
@@ -511,6 +531,8 @@ def _area_breakdown_mm2(model: ModelConfig, hardware: HardwareConfig) -> AreaBre
         dac_mm2=dac_mm2,
         adc_draft_mm2=adc_draft_mm2,
         adc_residual_mm2=adc_residual_mm2,
+        attention_cim_sram_mm2=attention_cim_sram_mm2,
+        attention_cim_mac_mm2=attention_cim_mac_mm2,
         tia_mm2=tia_mm2,
         snh_mm2=snh_mm2,
         mux_mm2=mux_mm2,

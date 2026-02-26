@@ -585,6 +585,7 @@
       },
       "sram": {
         "area_mm2": 18.5478,
+        "capacity_bytes": 2097152,
         "read_bandwidth_GBps": 22.0923,
         "read_energy_pj_per_byte": 16.6539,
         "read_latency_ns": 3.80895,
@@ -625,7 +626,7 @@
       "dac.*": "placeholder (no standalone DAC coefficient export in this NeuroSim flow): copied from puma_like_v1 defaults",
       "digital.*": "placeholder: copied from puma_like_v1 defaults",
       "soc.*": "placeholder: copied from science_soc_v1 defaults",
-      "memory.sram.*": "cacti: ../cacti with reference/cacti/science_adi9405_v1_sram.cfg (cache type=ram, 2MiB, 64B block, 65nm); converted read/write nJ per access to pJ/byte by dividing by 64B; bandwidth from block_size/cycle_time; area from data-array area",
+      "memory.sram.*": "cacti: ../cacti with reference/cacti/science_adi9405_v1_sram.cfg (cache type=ram, 2MiB, 64B block, 65nm); converted read/write nJ per access to pJ/byte by dividing by 64B; bandwidth from block_size/cycle_time; area from data-array area; capacity_bytes set to 2MiB for area-per-byte derivations (e.g., attention SRAM-CIM storage area)",
       "memory.fabric.*": "placeholder: copied from science_soc_v1 defaults",
       "memory.hbm.*": "cacti-dram-proxy (8GiB profile): ../cacti with reference/cacti/science_adi9405_v1_dram.cfg (cache type=main memory, comm-dram cell, 2GiB proxy, 64B block, 65nm); converted nJ/access to pJ/byte by dividing by 64B; bandwidth from block_size/cycle_time; latency from access time; area scaled 4x from 2GiB CACTI data-array area to represent 8GiB capacity"
     },

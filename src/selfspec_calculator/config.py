@@ -200,6 +200,8 @@ class ControlOverheadKnobs(BaseModel):
 class SocKnobs(BaseModel):
     schedule: ScheduleMode = ScheduleMode.serialized
     attention_cim_units: int = Field(1, ge=1)
+    attention_cim_mac_area_mm2_per_unit: float = Field(0.0, ge=0.0)
+    attention_cim_storage_bits_per_element: int | None = Field(default=None, ge=1)
     verify_setup: VerifySetupKnobs = Field(default_factory=VerifySetupKnobs)
     buffers_add: PerOpOverheadSpec = Field(default_factory=PerOpOverheadSpec)
     control: ControlOverheadKnobs = Field(default_factory=ControlOverheadKnobs)
@@ -213,6 +215,7 @@ class MemoryTechKnobs(BaseModel):
     read_latency_ns: float = Field(0.0, ge=0.0)
     write_latency_ns: float = Field(0.0, ge=0.0)
     area_mm2: float = Field(0.0, ge=0.0)
+    capacity_bytes: int | None = Field(default=None, ge=1)
 
 
 class KvCacheFormatKnobs(BaseModel):
@@ -244,6 +247,8 @@ class MemoryLibraryDefaults(BaseModel):
 
 
 class SocLibraryDefaults(BaseModel):
+    attention_cim_mac_area_mm2_per_unit: float = Field(0.0, ge=0.0)
+    attention_cim_storage_bits_per_element: int | None = Field(default=None, ge=1)
     verify_setup: VerifySetupKnobs = Field(default_factory=VerifySetupKnobs)
     buffers_add: PerOpOverheadSpec = Field(default_factory=PerOpOverheadSpec)
     control: ControlOverheadKnobs = Field(default_factory=ControlOverheadKnobs)
@@ -575,6 +580,10 @@ class HardwareConfig(BaseModel):
             return
 
         soc_defaults = SocLibraryDefaults.model_validate(lib.get("soc", {}))
+        if "attention_cim_mac_area_mm2_per_unit" not in self.soc.model_fields_set:
+            self.soc.attention_cim_mac_area_mm2_per_unit = soc_defaults.attention_cim_mac_area_mm2_per_unit
+        if "attention_cim_storage_bits_per_element" not in self.soc.model_fields_set:
+            self.soc.attention_cim_storage_bits_per_element = soc_defaults.attention_cim_storage_bits_per_element
         for field in ["energy_pj_per_burst", "latency_ns_per_burst"]:
             if field not in self.soc.verify_setup.model_fields_set:
                 setattr(self.soc.verify_setup, field, getattr(soc_defaults.verify_setup, field))
@@ -607,6 +616,7 @@ class HardwareConfig(BaseModel):
                     "read_latency_ns",
                     "write_latency_ns",
                     "area_mm2",
+                    "capacity_bytes",
                 ]:
                     if field not in cur_tech.model_fields_set:
                         setattr(cur_tech, field, getattr(def_tech, field))

@@ -278,8 +278,17 @@ def test_attention_cim_units_scale_qk_pv_latency_and_area() -> None:
     model = ModelConfig.model_validate(BASE_MODEL)
     stats = SpeculationStats(k=1, histogram={0: 1.0})
 
-    hw1 = _base_knob_hardware(soc={"attention_cim_units": 1})
-    hw8 = _base_knob_hardware(soc={"attention_cim_units": 8})
+    # Attention SRAM-CIM unit split:
+    # - SRAM storage area from CACTI-style memory area/capacity ratio
+    # - MAC logic area from a separate per-unit knob (to be replaced by DC later)
+    hw1 = _base_knob_hardware(
+        soc={"attention_cim_units": 1, "attention_cim_mac_area_mm2_per_unit": 0.25},
+        memory={"sram": {"area_mm2": 2.0, "capacity_bytes": 131072}},
+    )
+    hw8 = _base_knob_hardware(
+        soc={"attention_cim_units": 8, "attention_cim_mac_area_mm2_per_unit": 0.25},
+        memory={"sram": {"area_mm2": 2.0, "capacity_bytes": 131072}},
+    )
 
     _, b1 = estimate_point(model=model, hardware=hw1, stats=stats, l_prompt=64)
     _, b8 = estimate_point(model=model, hardware=hw8, stats=stats, l_prompt=64)
@@ -291,20 +300,22 @@ def test_attention_cim_units_scale_qk_pv_latency_and_area() -> None:
     assert b8.draft.stages.qk_energy_pj == pytest.approx(b1.draft.stages.qk_energy_pj)
     assert b8.draft.stages.pv_energy_pj == pytest.approx(b1.draft.stages.pv_energy_pj)
 
-    specs = hw1.resolve_knob_specs()
     assert hw1.analog is not None
-    unit_area = (
-        specs.array.area_mm2_per_array
-        if specs.array.area_mm2_per_array is not None and specs.array.area_mm2_per_array > 0.0
-        else specs.array.area_mm2_per_weight * float(hw1.analog.xbar_size * hw1.analog.xbar_size)
-    )
-    expected_delta = float(model.n_layers) * (8.0 - 1.0) * float(unit_area)
+    # activation_bits=12 -> 2 bytes/element, logical array = 128x128 elements
+    unit_sram_bytes = float(hw1.analog.xbar_size * hw1.analog.xbar_size * 2)
+    unit_sram_area = unit_sram_bytes * (2.0 / 131072.0)
+    unit_mac_area = 0.25
+    expected_delta_sram = float(model.n_layers) * (8.0 - 1.0) * unit_sram_area
+    expected_delta_mac = float(model.n_layers) * (8.0 - 1.0) * unit_mac_area
 
     r1 = estimate_sweep(model=model, hardware=hw1, stats=stats, prompt_lengths=[64]).model_dump(mode="json")
     r8 = estimate_sweep(model=model, hardware=hw8, stats=stats, prompt_lengths=[64]).model_dump(mode="json")
-    d1 = r1["area_breakdown_mm2"]["on_chip_components"]["digital_overhead_mm2"]
-    d8 = r8["area_breakdown_mm2"]["on_chip_components"]["digital_overhead_mm2"]
-    assert d8 - d1 == pytest.approx(expected_delta)
+    c1 = r1["area_breakdown_mm2"]["on_chip_components"]
+    c8 = r8["area_breakdown_mm2"]["on_chip_components"]
+    assert c8["attention_cim_sram_mm2"] - c1["attention_cim_sram_mm2"] == pytest.approx(expected_delta_sram)
+    assert c8["attention_cim_mac_mm2"] - c1["attention_cim_mac_mm2"] == pytest.approx(expected_delta_mac)
+    # Base digital overhead remains separate from attention-CIM split components.
+    assert c8["digital_overhead_mm2"] == pytest.approx(c1["digital_overhead_mm2"])
 
 
 def test_max_context_tokens_enforced_when_set() -> None:

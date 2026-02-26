@@ -37,7 +37,7 @@ Large Language Models (LLMs) do not require scientific-grade precision for every
 
 ### 2.1 The "Hardware-Native" Draft Model
 
-In the Residual Architecture, **Array 1** (the uncompensated array) is mathematically equivalent to the quantization of the Full Model plus a noise term.
+In the Residual Architecture, **Array 1** (the uncompensated array) is a coarse analog projection of the full residual-programmed model. Its lower effective precision comes from reading only the first residual stage (plus analog/device/readout noise), not from bit-plane weight quantization.
 
 * **Magnitude Dominance:** Array 1 typically captures >95% of the signal energy (the "shape" of the weight vector). Arrays 2-4 only provide the "fine tuning."
 * **The Strategy:** We repurpose Array 1 as a standalone "Draft Model." By reading only Array 1, we obtain a fast, low-energy approximation of the next token.
@@ -50,6 +50,7 @@ Software controls the hardware state to toggle between "High Throughput" and "Hi
 
 * **Hardware State:** Draft-mode compute uses the configurable precision policy (§4.1). By default, Switch 1 is Closed (Active) and Switches 2-4 are Power Gated, but selected blocks/layers can enable additional arrays to run in full precision even during Draft Mode.
 * **ADC Config:** ADC-Draft is always active (low-resolution, e.g., 4-bit). For blocks/layers configured to use **full precision** in Draft Mode, we activate Arrays 1-4 and use both ADCs, then digitally combine and store the full-precision result for possible reuse in Verify Mode.
+* **Precision Interpretation:** In Draft Mode, "low precision" means coarse analog readout (Array 1 + low-resolution ADC path), not quantized weights.
 * **Latency:** Ultra-low (e.g., 5ns).
 * **Usage:** Used to auto-regressively generate a sequence of $K$ future tokens (e.g., 5 tokens ahead).
 
@@ -150,7 +151,7 @@ To validate the proposed **Self-Speculating Analog Architecture**, we employ a h
 
 The verification pipeline consists of two interacting components:
 
-1. **The Accuracy Engine (PyTorch):** Based on the open-source **`gpt-fast`** (by Meta PyTorch Team). We will modify this to simulate the algorithmic behavior, injecting noise to mimic the analog "Draft" and performing quantization to mimic the "Residuals."
+1. **The Accuracy Engine (PyTorch):** Based on the open-source **`gpt-fast`** (by Meta PyTorch Team). We will modify this to simulate the algorithmic behavior, injecting device/readout noise to mimic analog draft behavior and modeling finite ReRAM interface precision (DAC/ADC) where applicable.
 2. **The Performance Calculator (`selfspec-calculator`, Python):** A parametric tool that takes usage statistics from the Accuracy Engine (e.g., "How many tokens were accepted?") and maps them to physical metrics using two configs (`model.yaml` and `hardware.yaml`).
 
 ### 5.2 Part A: Functional Simulation (Accuracy & Speculation)
@@ -160,14 +161,16 @@ We intend to modify the `gpt-fast` inference loop to emulate the physical behavi
 * **Base Model:** **[Models around 1B, like Llama 3 1B, Qwen 2.5 1.5B or GPT-2-XL]**
 * **Datasets:** **[PLACEHOLDER: e.g., WikiText-2, C4, or HumanEval]**
 
-#### 5.2.1 Noise & Quantization Modeling
+#### 5.2.1 Noise & Interface-Precision Modeling
 
-To simulate **Array 1 (The Draft Model)**, we apply the following transformation to the weight matrices $W$:
+To simulate **Array 1 (The Draft Model)** and residual verification behavior:
 
-1. **Quantization:** $W_{q} = \text{Quantize}(W, \text{bits}=4)$.
-2. **Analog Noise Injection:** $W_{draft} = W_{q} + \mathcal{N}(0, \sigma_{write})$.
-    * $\sigma_{write}$ is derived from physical device measurements found in **[PLACEHOLDER: Measure data from Song et al. or 1T1R device paper]**.
-3. **Residual Simulation:** The "Verification" step uses the original $W$ (FP16), assuming the Hardware Opt 1 (Arrays 2-4) successfully reconstructs the high-precision value.
+1. **No weight quantization in the ReRAM path:** keep the model weights represented by the residual analog decomposition (Array 1 + residual arrays), not digital bit-plane quantized weights.
+2. **Draft analog approximation:** model draft behavior by reading only Array 1 (or configured draft/full policy), with analog variability/read noise.
+    * $\sigma_{write}$ and readout noise parameters are derived from physical device measurements (**[PLACEHOLDER: Measure data from Song et al. or 1T1R device paper]**).
+3. **ReRAM interface precision only:** quantization/dequantization is applied at the ReRAM I/O interface (finite DAC input precision and ADC output precision).
+4. **Non-ReRAM compute precision contract:** outside the ReRAM interface, computations remain FP/BF16 (for example SRAM-CIM attention, KV-cache path, softmax, and elementwise digital units).
+5. **Residual verification:** verification uses all residual arrays (full analog reconstruction path) and full-precision digital compute assumptions.
 
 #### 5.2.2 Speculation Logic Implementation
 
@@ -194,7 +197,7 @@ The estimator is driven by two configuration files plus runtime speculation stat
 
 1. **Transformer Model Config (`model.yaml`)**
    * Purpose: Describe the Transformer so we can derive what hardware is needed (matrix shapes, number of layers, and the MAC/read counts implied by attention + MLP).
-   * Example fields (illustrative): number of layers, hidden size, number of heads, MLP expansion, vocab size, target sequence length, batch size, weight precision.
+   * Example fields (illustrative): number of layers, hidden size, number of heads, MLP expansion, vocab size, target sequence length, batch size, and activation/interface precision knobs.
    * FFN type: specify the FFN architecture (e.g., classic 2-projection MLP with GELU, or gated FFN such as SwiGLU with gate/up/down projections) and the corresponding intermediate sizes.
    * Draft precision policy (from §4.1): specify, for each layer, whether the following three **analog matmul** blocks use **draft mode** or **full precision** during Draft Mode:
      * QKV projection (Q/K/V)
@@ -205,7 +208,7 @@ The estimator is driven by two configuration files plus runtime speculation stat
 2. **Hardware Config (`hardware.yaml`)**
    * Purpose: Describe model-irrelevant hardware/technology knobs (crossbar sizing/tiling, ADC precision and type, peripheral energy/latency/area parameters, process assumptions).
    * Example fields (illustrative):
-     * **Analog CIM (ReRAM Residual Arrays):** crossbar rows/cols, number of residual arrays (e.g., 1+3 split), ADC-Draft bit-width and characteristics, ADC-Residual bit-width and characteristics, device read energy/latency, and area models.
+     * **Analog CIM (ReRAM Residual Arrays):** crossbar rows/cols, number of residual arrays (e.g., 1+3 split), DAC input precision, ADC-Draft bit-width and characteristics, ADC-Residual bit-width and characteristics, device read energy/latency, and area models.
      * **Draft Result Reuse in Verify:** whether verification reuses stored draft readout results (e.g., $D_{reg}$) or always re-reads Array 1 for drafted tokens (to study correctness vs PPA when verifier inputs differ from draft inputs).
      * **Digital CIM (SRAM, FP/BF16, per-layer):** attention matmul engine for $QK^\top$ and $P V$ (where $P=\text{Softmax}(QK^\top)$ is computed by a dedicated softmax unit), including array/tile sizing, energy/latency per MAC (or per matmul), and area models.
      * **KV-Cache (Dedicated Digital, per-layer):** memory technology/size assumptions, read/write energy/latency, and area models.
@@ -260,6 +263,8 @@ Rather than relying on a single closed-form equation upfront, the estimator will
 * **Burst / Setup effects:** If using Spatial Pipelined Verification (§2.3), setup/bitline charge penalties are accounted for per burst and amortized across the verified tokens in that burst.
 
 **Draft/Verify Scheduling Assumption:** Draft and verify share the same per-layer hardware resources and are modeled as **strictly serialized** at the burst level: compute the Draft burst first, then compute the $K+1$ verifier steps, with no overlap between Draft and Verify phases.
+
+**Precision Contract Summary:** During inference, only ReRAM input/output interface precision is discretized (DAC/ADC). ReRAM weights are represented by residual analog arrays (not bit-plane quantized), and non-ReRAM compute paths (SRAM-CIM + digital units) are modeled in FP/BF16.
 
 **Timing Model:** For each compute step, total latency is modeled as:
 
