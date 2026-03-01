@@ -223,11 +223,11 @@ def test_zero_leakage_matches_dynamic_only_energy() -> None:
     hw_zero = _base_knob_hardware(
         soc={"schedule": "layer-pipelined"},
         leakage_power={
-            "arrays_mw": 0.0,
-            "attention_engine_mw": 0.0,
-            "sram_mw": 0.0,
-            "hbm_mw": 0.0,
-            "fabric_mw": 0.0,
+            "arrays_nw": 0.0,
+            "attention_engine_nw": 0.0,
+            "sram_nw": 0.0,
+            "hbm_nw": 0.0,
+            "fabric_nw": 0.0,
         },
     )
 
@@ -241,21 +241,21 @@ def test_zero_leakage_matches_dynamic_only_energy() -> None:
 def test_positive_leakage_adds_expected_energy_delta() -> None:
     model = ModelConfig.model_validate(BASE_MODEL)
     stats = SpeculationStats(k=2, histogram={0: 1.0})
-    total_leakage_mw = 7.5
+    total_leakage_nw = 7_500_000.0
 
     hw_base = _base_knob_hardware(soc={"schedule": "serialized"})
     hw_leak = _base_knob_hardware(
         soc={"schedule": "serialized"},
         leakage_power={
-            "arrays_mw": 5.0,
-            "control_mw": 2.5,
+            "arrays_nw": 5_000_000.0,
+            "control_nw": 2_500_000.0,
         },
     )
 
     m_base, _ = estimate_point(model=model, hardware=hw_base, stats=stats, l_prompt=64)
     m_leak, _ = estimate_point(model=model, hardware=hw_leak, stats=stats, l_prompt=64)
 
-    expected_delta = total_leakage_mw * m_base.latency_ns_per_token
+    expected_delta = total_leakage_nw * m_base.latency_ns_per_token * 1e-6
     assert m_leak.latency_ns_per_token == pytest.approx(m_base.latency_ns_per_token)
     assert m_leak.energy_pj_per_token - m_base.energy_pj_per_token == pytest.approx(expected_delta)
 
@@ -263,17 +263,17 @@ def test_positive_leakage_adds_expected_energy_delta() -> None:
 def test_leakage_energy_uses_schedule_aware_burst_latency() -> None:
     model = ModelConfig.model_validate(BASE_MODEL)
     stats = SpeculationStats(k=3, histogram={0: 1.0})
-    total_leakage_mw = 4.0
+    total_leakage_nw = 4_000_000.0
 
     hw_serial = _base_knob_hardware(soc={"schedule": "serialized"})
     hw_serial_leak = _base_knob_hardware(
         soc={"schedule": "serialized"},
-        leakage_power={"arrays_mw": total_leakage_mw},
+        leakage_power={"arrays_nw": total_leakage_nw},
     )
     hw_pipe = _base_knob_hardware(soc={"schedule": "layer-pipelined"})
     hw_pipe_leak = _base_knob_hardware(
         soc={"schedule": "layer-pipelined"},
-        leakage_power={"arrays_mw": total_leakage_mw},
+        leakage_power={"arrays_nw": total_leakage_nw},
     )
 
     m_serial, _ = estimate_point(model=model, hardware=hw_serial, stats=stats, l_prompt=64)
@@ -284,8 +284,8 @@ def test_leakage_energy_uses_schedule_aware_burst_latency() -> None:
     delta_serial = m_serial_leak.energy_pj_per_token - m_serial.energy_pj_per_token
     delta_pipe = m_pipe_leak.energy_pj_per_token - m_pipe.energy_pj_per_token
 
-    assert delta_serial == pytest.approx(total_leakage_mw * m_serial.latency_ns_per_token)
-    assert delta_pipe == pytest.approx(total_leakage_mw * m_pipe.latency_ns_per_token)
+    assert delta_serial == pytest.approx(total_leakage_nw * m_serial.latency_ns_per_token * 1e-6)
+    assert delta_pipe == pytest.approx(total_leakage_nw * m_pipe.latency_ns_per_token * 1e-6)
     assert m_pipe.latency_ns_per_token <= m_serial.latency_ns_per_token
     assert delta_pipe <= delta_serial
 

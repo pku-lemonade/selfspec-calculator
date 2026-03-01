@@ -135,9 +135,9 @@ def test_report_includes_leakage_summary_and_leakage_power_inputs() -> None:
                 "adc": {"draft_bits": 4, "residual_bits": 12},
             },
             "leakage_power": {
-                "arrays_mw": 2.0,
-                "control_mw": 1.5,
-                "sram_mw": 0.5,
+                "arrays_nw": 2_000_000.0,
+                "control_nw": 1_500_000.0,
+                "sram_nw": 500_000.0,
             },
         }
     )
@@ -147,14 +147,14 @@ def test_report_includes_leakage_summary_and_leakage_power_inputs() -> None:
     point = report["points"][0]
     leakage = point["leakage"]
     assert leakage is not None
-    assert leakage["total_power_mw"] == pytest.approx(4.0)
-    assert leakage["energy_pj"] == pytest.approx(leakage["total_power_mw"] * leakage["burst_latency_ns"])
+    assert leakage["total_power_nw"] == pytest.approx(4_000_000.0)
+    assert leakage["energy_pj"] == pytest.approx(leakage["total_power_nw"] * leakage["burst_latency_ns"] * 1e-6)
 
     assert "hardware_knobs" in report
     assert "leakage_power" in report["hardware_knobs"]
-    assert report["hardware_knobs"]["leakage_power"]["arrays_mw"] == pytest.approx(2.0)
-    assert report["hardware_knobs"]["leakage_power"]["control_mw"] == pytest.approx(1.5)
-    assert report["hardware_knobs"]["leakage_power"]["sram_mw"] == pytest.approx(0.5)
+    assert report["hardware_knobs"]["leakage_power"]["arrays_nw"] == pytest.approx(2_000_000.0)
+    assert report["hardware_knobs"]["leakage_power"]["control_nw"] == pytest.approx(1_500_000.0)
+    assert report["hardware_knobs"]["leakage_power"]["sram_nw"] == pytest.approx(500_000.0)
 
 
 def test_area_breakdown_reports_memory_and_periphery_area_and_excludes_hbm_from_on_chip_total() -> None:

@@ -547,21 +547,21 @@
     },
     "digital": {
       "attention": {
-        "energy_pj_per_mac": 0.0004,
-        "latency_ns_per_mac": 0.0007
+        "energy_pj_per_mac": 5.9854,
+        "latency_ns_per_mac": 2.08
       },
-      "digital_overhead_area_mm2_per_layer": 0.01,
+      "digital_overhead_area_mm2_per_layer": 0.020426,
       "elementwise": {
-        "energy_pj_per_mac": 2e-05,
-        "latency_ns_per_mac": 2e-05
+        "energy_pj_per_mac": 3.6208,
+        "latency_ns_per_mac": 2.05
       },
       "kv_cache": {
-        "energy_pj_per_mac": 0.0001,
-        "latency_ns_per_mac": 0.0001
+        "energy_pj_per_mac": 10.2172,
+        "latency_ns_per_mac": 2.13
       },
       "softmax": {
-        "energy_pj_per_mac": 5e-05,
-        "latency_ns_per_mac": 5e-05
+        "energy_pj_per_mac": 3.4208,
+        "latency_ns_per_mac": 2.08
       }
     },
     "memory": {
@@ -576,39 +576,41 @@
       },
       "hbm": {
         "area_mm2": 5916.6,
-        "read_bandwidth_GBps": 0.59321,
-        "read_energy_pj_per_byte": 1970.78,
-        "read_latency_ns": 75.3615,
-        "write_bandwidth_GBps": 0.59321,
+        "read_bandwidth_GBps": 0.8000400020001,
+        "read_energy_pj_per_byte": 1970.78125,
+        "read_latency_ns": 29.634600163,
+        "write_bandwidth_GBps": 0.8000400020001,
         "write_energy_pj_per_byte": 1972.75,
-        "write_latency_ns": 75.3615
+        "write_latency_ns": 29.634600163
       },
       "sram": {
         "area_mm2": 18.5478,
         "capacity_bytes": 2097152,
-        "read_bandwidth_GBps": 22.0923,
-        "read_energy_pj_per_byte": 16.6539,
+        "read_bandwidth_GBps": 22.09227667815005,
+        "read_energy_pj_per_byte": 16.65390625,
         "read_latency_ns": 3.80895,
-        "write_bandwidth_GBps": 22.0923,
-        "write_energy_pj_per_byte": 18.1902,
+        "write_bandwidth_GBps": 22.09227667815005,
+        "write_energy_pj_per_byte": 18.19015625,
         "write_latency_ns": 3.80895
       }
     },
     "soc": {
       "buffers_add": {
-        "energy_pj_per_op": 0.01,
-        "latency_ns_per_op": 0.02
+        "energy_pj_per_op": 7.8206,
+        "latency_ns_per_op": 4.0,
+        "area_mm2_per_unit": 0.005863
       },
       "control": {
-        "energy_pj_per_burst": 0.0,
-        "energy_pj_per_token": 1.0,
-        "latency_ns_per_burst": 0.0,
-        "latency_ns_per_token": 2.0
-      },
-      "verify_setup": {
+        "energy_pj_per_token": 0.1178,
+        "latency_ns_per_token": 1.96,
         "energy_pj_per_burst": 0.0,
         "latency_ns_per_burst": 0.0
-      }
+      },
+      "verify_setup": {
+        "energy_pj_per_burst": 0.1724,
+        "latency_ns_per_burst": 1.99
+      },
+      "attention_cim_mac_area_mm2_per_unit": 0.00428
     },
     "source_map": {
       "adc.*": "neurosim (65nm, MLSA+VSA sweep): ../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM main output swept with levelOutput=2^bits for bits 1..16; normalized as area_mm2_per_unit=chip_adc_area_um2/(32*1e6), energy_pj_per_conversion=chip_adc_energy_pj/4096, latency_ns_per_conversion=chip_adc_latency_ns/256",
@@ -624,11 +626,35 @@
       "analog_periphery.subarray_switches.*": "neurosim-proxy (65nm): residual Other-periphery bucket from ../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM main output",
       "analog_periphery.write_drivers.*": "neurosim-proxy (65nm): residual Other-periphery bucket from ../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM main output",
       "dac.*": "placeholder (no standalone DAC coefficient export in this NeuroSim flow): copied from puma_like_v1 defaults",
-      "digital.*": "placeholder: copied from puma_like_v1 defaults",
-      "soc.*": "placeholder: copied from science_soc_v1 defaults",
       "memory.sram.*": "cacti: ../cacti with reference/cacti/science_adi9405_v1_sram.cfg (cache type=ram, 2MiB, 64B block, 65nm); converted read/write nJ per access to pJ/byte by dividing by 64B; bandwidth from block_size/cycle_time; area from data-array area; capacity_bytes set to 2MiB for area-per-byte derivations (e.g., attention SRAM-CIM storage area)",
       "memory.fabric.*": "placeholder: copied from science_soc_v1 defaults",
-      "memory.hbm.*": "cacti-dram-proxy (8GiB profile): ../cacti with reference/cacti/science_adi9405_v1_dram.cfg (cache type=main memory, comm-dram cell, 2GiB proxy, 64B block, 65nm); converted nJ/access to pJ/byte by dividing by 64B; bandwidth from block_size/cycle_time; latency from access time; area scaled 4x from 2GiB CACTI data-array area to represent 8GiB capacity"
+      "memory.hbm.area_mm2": "cacti-dram-proxy (8GiB profile): ../cacti with reference/cacti/science_adi9405_v1_dram.cfg (cache type=main memory, comm-dram cell, 2GiB proxy, 64B block, 65nm); area scaled 4x from 2GiB CACTI data-array area to represent 8GiB capacity",
+      "memory.hbm.read_energy_pj_per_byte": "cacti-dram-proxy (8GiB profile): ../cacti with reference/cacti/science_adi9405_v1_dram.cfg; converted read nJ/access to pJ/byte by dividing by 64B",
+      "memory.hbm.write_energy_pj_per_byte": "cacti-dram-proxy (8GiB profile): ../cacti with reference/cacti/science_adi9405_v1_dram.cfg; converted write nJ/access to pJ/byte by dividing by 64B",
+      "memory.hbm.read_bandwidth_GBps": "ramulator2 (HBM2): ../ramulator2/build/ramulator2 -f reference/ramulator2/hbm2_read.yaml; computed as total_num_read_requests * 16B / (memory_system_cycles * tCK_ns)",
+      "memory.hbm.write_bandwidth_GBps": "ramulator2 (HBM2): ../ramulator2/build/ramulator2 -f reference/ramulator2/hbm2_write.yaml; computed as total_num_write_requests * 16B / (memory_system_cycles * tCK_ns)",
+      "memory.hbm.read_latency_ns": "ramulator2 (HBM2): weighted average of avg_read_latency_0..7 from reference/ramulator2/hbm2_read.out.yaml multiplied by tCK=1ns",
+      "memory.hbm.write_latency_ns": "ramulator2-derived assumption: set equal to read latency because Generic controller exports avg_read_latency only (no avg_write_latency stat)",
+      "leakage_power.arrays_nw": "neurosim (65nm): analog-only share of chip leakage power from ../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM main output (reference/neurosim/science_adi9405_v1_neurosim_65nm_fill2.out.txt), allocated by area share",
+      "leakage_power.adc_*_nw": "neurosim (65nm): ADC share of analog-only chip leakage power from NeuroSim fill2 output, split equally into draft/residual",
+      "leakage_power.tia/snh/mux/io_buffers/subarray_switches/write_drivers_nw": "neurosim-proxy (65nm): other-periphery share of analog-only chip leakage power from NeuroSim fill2 output, split by analog_periphery.* area_mm2_per_unit ratios",
+      "leakage_power.sram_nw": "cacti: ../cacti with reference/cacti/science_adi9405_v1_sram.cfg; uses \"Total leakage power of a bank (mW)\" converted to nW",
+      "leakage_power.hbm_nw": "cacti-dram-proxy (8GiB profile): ../cacti with reference/cacti/science_adi9405_v1_dram.cfg; uses 2GiB \"Total leakage power of a bank (mW)\" scaled by 4x for 8GiB then converted to nW",
+      "digital.attention.*": "design-compiler: reference/final_ppa_summary.csv row attention_cim_mac; energy_pj_per_mac from Energy(pJ/cycle), latency_ns_per_mac from Delay(ns), assuming 1 op/cycle",
+      "digital.softmax.*": "design-compiler: reference/final_ppa_summary.csv row softmax_unit; energy/latency mapped as per-op (1 op/cycle assumption)",
+      "digital.elementwise.*": "design-compiler: reference/final_ppa_summary.csv row ffn_elementwise_unit; quantize_dequantize is folded into soc.buffers_add.* in this schema",
+      "digital.kv_cache.*": "design-compiler: reference/final_ppa_summary.csv row kv_cache_datapath; energy/latency mapped as per-op (1 op/cycle assumption)",
+      "digital.digital_overhead_area_mm2_per_layer": "design-compiler: sum of module areas in reference/final_ppa_summary.csv excluding attention_cim_mac (softmax, ffn_elementwise, kv_cache_datapath, quantize_dequantize, buffers_add, control_scheduler, verify_setup)",
+      "soc.attention_cim_mac_area_mm2_per_unit": "design-compiler: reference/final_ppa_summary.csv row attention_cim_mac Area(mm2)",
+      "soc.buffers_add.*": "design-compiler: reference/final_ppa_summary.csv; buffers_add_unit + quantize_dequantize_unit folded into soc.buffers_add energy/latency/area due schema (no separate quantize field)",
+      "soc.control.*": "design-compiler: reference/final_ppa_summary.csv row control_scheduler_unit mapped to per-token control; per-burst control kept at 0.0",
+      "soc.verify_setup.*": "design-compiler: reference/final_ppa_summary.csv row verify_setup_unit mapped to per-burst setup energy/latency",
+      "leakage_power.attention_engine_nw": "design-compiler: reference/final_ppa_summary.csv row attention_cim_mac Leakage(nW)",
+      "leakage_power.softmax_unit_nw": "design-compiler: reference/final_ppa_summary.csv row softmax_unit Leakage(nW)",
+      "leakage_power.elementwise_unit_nw": "design-compiler: reference/final_ppa_summary.csv row ffn_elementwise_unit Leakage(nW)",
+      "leakage_power.kv_cache_nw": "design-compiler: reference/final_ppa_summary.csv row kv_cache_datapath Leakage(nW)",
+      "leakage_power.buffers_add_nw": "design-compiler: reference/final_ppa_summary.csv; buffers_add_unit + quantize_dequantize_unit leakage folded into buffers_add_nw",
+      "leakage_power.control_nw": "design-compiler: reference/final_ppa_summary.csv; control_scheduler_unit + verify_setup_unit leakage folded into control_nw (no separate verify_setup leakage field in schema)"
     },
     "source_notes": {
       "neurosim_run_used": "./main /tmp/ns_net_fill2.csv 1 1 128 128 /tmp/ns_w_fill2.csv /tmp/ns_i_fill2.csv",
@@ -659,7 +685,58 @@
       "paper_refs": [
         "reference/Programming memristor arrays with arbitrarily high precision for analog computing  Science.pdf",
         "reference/science.adi9405_sm.pdf"
+      ],
+      "ramulator2_repo": "../ramulator2",
+      "ramulator2_build_command": "cd ../ramulator2 && mkdir -p build && cd build && cmake .. && make -j",
+      "ramulator2_runs_used": [
+        "../ramulator2/build/ramulator2 -f reference/ramulator2/hbm2_read.yaml",
+        "../ramulator2/build/ramulator2 -f reference/ramulator2/hbm2_write.yaml"
+      ],
+      "ramulator2_configs_used": [
+        "reference/ramulator2/hbm2_read.yaml",
+        "reference/ramulator2/hbm2_write.yaml"
+      ],
+      "ramulator2_outputs_used": [
+        "reference/ramulator2/hbm2_read.out.yaml",
+        "reference/ramulator2/hbm2_write.out.yaml"
+      ],
+      "ramulator2_hbm2_tx_bytes": 16,
+      "ramulator2_hbm2_tck_ns": 1.0,
+      "ramulator2_hbm2_weighted_avg_read_latency_cycles": 29.634600163,
+      "ramulator2_hbm2_compat_notes": [
+        "Patched ../ramulator2/src/dram_controller/impl/refresh/all_bank_refresh.cpp to tolerate DRAM models without rank level.",
+        "Used OpenRowPolicy in HBM2 configs because ClosedRowPolicy requires rank and close-row request unsupported by HBM2 model in this repo.",
+        "HBM2/HBM3 models in this Ramulator2 revision do not expose DRAMPower energy statistics; HBM energy and leakage remain from CACTI proxy."
+      ],
+      "leakage_derivation": "Schema stores leakage in nW. CACTI leakage converted from mW to nW. NeuroSim leakage (uW) converted to nW.",
+      "dc_csv_used": "reference/final_ppa_summary.csv",
+      "dc_mapping_assumptions": [
+        "Energy(pJ/cycle) is mapped to per-op energy with 1 operation per cycle assumption.",
+        "Delay(ns) is used as per-op latency proxy.",
+        "quantize_dequantize_unit is folded into soc.buffers_add.* because schema has no standalone quantize field.",
+        "verify_setup_unit leakage is folded into leakage_power.control_nw because schema has no standalone verify_setup leakage field."
       ]
+    },
+    "leakage_power": {
+      "arrays_nw": 91.12174474446854,
+      "dac_nw": 0.0,
+      "adc_draft_nw": 32.20902527793195,
+      "adc_residual_nw": 32.20902527793195,
+      "tia_nw": 3.915587264949687,
+      "snh_nw": 3.915587264949687,
+      "mux_nw": 7.486772072025123,
+      "io_buffers_nw": 9.965757342441202,
+      "subarray_switches_nw": 239.57596706927714,
+      "write_drivers_nw": 1.8716868577102244,
+      "attention_engine_nw": 62.789,
+      "softmax_unit_nw": 40.4176,
+      "elementwise_unit_nw": 48.6942,
+      "kv_cache_nw": 109.9762,
+      "buffers_add_nw": 82.1292,
+      "control_nw": 9.9173,
+      "sram_nw": 2520840000.0,
+      "hbm_nw": 242635600.0,
+      "fabric_nw": 0.0
     }
   }
 }

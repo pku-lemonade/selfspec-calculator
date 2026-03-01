@@ -412,7 +412,7 @@ class PhaseBreakdown(BaseModel):
 
 
 class LeakageSummary(BaseModel):
-    total_power_mw: float = Field(0.0, ge=0.0)
+    total_power_nw: float = Field(0.0, ge=0.0)
     energy_pj: float = Field(0.0, ge=0.0)
     burst_latency_ns: float = Field(0.0, ge=0.0)
 

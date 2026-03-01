@@ -198,25 +198,25 @@ class ControlOverheadKnobs(BaseModel):
 
 
 class ComponentLeakagePowerKnobs(BaseModel):
-    arrays_mw: float = Field(0.0, ge=0.0)
-    dac_mw: float = Field(0.0, ge=0.0)
-    adc_draft_mw: float = Field(0.0, ge=0.0)
-    adc_residual_mw: float = Field(0.0, ge=0.0)
-    tia_mw: float = Field(0.0, ge=0.0)
-    snh_mw: float = Field(0.0, ge=0.0)
-    mux_mw: float = Field(0.0, ge=0.0)
-    io_buffers_mw: float = Field(0.0, ge=0.0)
-    subarray_switches_mw: float = Field(0.0, ge=0.0)
-    write_drivers_mw: float = Field(0.0, ge=0.0)
-    attention_engine_mw: float = Field(0.0, ge=0.0)
-    softmax_unit_mw: float = Field(0.0, ge=0.0)
-    elementwise_unit_mw: float = Field(0.0, ge=0.0)
-    kv_cache_mw: float = Field(0.0, ge=0.0)
-    buffers_add_mw: float = Field(0.0, ge=0.0)
-    control_mw: float = Field(0.0, ge=0.0)
-    sram_mw: float = Field(0.0, ge=0.0)
-    hbm_mw: float = Field(0.0, ge=0.0)
-    fabric_mw: float = Field(0.0, ge=0.0)
+    arrays_nw: float = Field(0.0, ge=0.0)
+    dac_nw: float = Field(0.0, ge=0.0)
+    adc_draft_nw: float = Field(0.0, ge=0.0)
+    adc_residual_nw: float = Field(0.0, ge=0.0)
+    tia_nw: float = Field(0.0, ge=0.0)
+    snh_nw: float = Field(0.0, ge=0.0)
+    mux_nw: float = Field(0.0, ge=0.0)
+    io_buffers_nw: float = Field(0.0, ge=0.0)
+    subarray_switches_nw: float = Field(0.0, ge=0.0)
+    write_drivers_nw: float = Field(0.0, ge=0.0)
+    attention_engine_nw: float = Field(0.0, ge=0.0)
+    softmax_unit_nw: float = Field(0.0, ge=0.0)
+    elementwise_unit_nw: float = Field(0.0, ge=0.0)
+    kv_cache_nw: float = Field(0.0, ge=0.0)
+    buffers_add_nw: float = Field(0.0, ge=0.0)
+    control_nw: float = Field(0.0, ge=0.0)
+    sram_nw: float = Field(0.0, ge=0.0)
+    hbm_nw: float = Field(0.0, ge=0.0)
+    fabric_nw: float = Field(0.0, ge=0.0)
 
 
 class SocKnobs(BaseModel):
@@ -644,6 +644,11 @@ class HardwareConfig(BaseModel):
                     if field not in cur_tech.model_fields_set:
                         setattr(cur_tech, field, getattr(def_tech, field))
 
+        leakage_defaults = ComponentLeakagePowerKnobs.model_validate(lib.get("leakage_power", {}))
+        for field in type(leakage_defaults).model_fields:
+            if field not in self.leakage_power.model_fields_set:
+                setattr(self.leakage_power, field, getattr(leakage_defaults, field))
+
     @property
     def mode(self) -> HardwareMode:
         if self.analog is not None:
@@ -724,6 +729,10 @@ class HardwareConfig(BaseModel):
                 payload["memory"] = MemoryLibraryDefaults.model_validate(lib["memory"]).model_dump(mode="json")
             if "analog_periphery" in lib:
                 payload["analog_periphery"] = AnalogPeripheryKnobs.model_validate(lib["analog_periphery"]).model_dump(
+                    mode="json"
+                )
+            if "leakage_power" in lib:
+                payload["leakage_power"] = ComponentLeakagePowerKnobs.model_validate(lib["leakage_power"]).model_dump(
                     mode="json"
                 )
         return payload

@@ -18,13 +18,13 @@ The estimator currently computes dynamic energy from operation and movement coun
 ## Decisions
 
 ### 1) Leakage power configuration mirrors modeled components
-- **Decision:** Introduce a leakage-power structure with one field per modeled component (arrays, DAC/ADC paths, analog periphery blocks, attention/softmax/elementwise engines, buffers/control, SRAM/HBM/fabric), in mW.
+- **Decision:** Introduce a leakage-power structure with one field per modeled component (arrays, DAC/ADC paths, analog periphery blocks, attention/softmax/elementwise engines, buffers/control, SRAM/HBM/fabric), in nW.
 - **Rationale:** Matches user requirement to specify leakage for all components and keeps coefficient ownership explicit.
 - **Alternative considered:** Single scalar chip leakage power. Rejected because it loses component attribution and calibration flexibility.
 
 ### 2) v1 leakage is always-on over burst wall-clock time
-- **Decision:** For each burst, leakage energy is `E_leak_burst_pJ = (sum component leakage mW) * T_burst_effective_ns`.
-- **Rationale:** mW·ns naturally maps to pJ and provides a simple, stable first-order model.
+- **Decision:** For each burst, leakage energy is `E_leak_burst_pJ = (sum component leakage nW) * T_burst_effective_ns * 1e-6`.
+- **Rationale:** nW·ns scales to pJ with a fixed `1e-6` factor and provides a simple, stable first-order model.
 - **Alternative considered:** Per-stage or per-component active-time weighting. Rejected for this small change due to complexity and missing utilization signals.
 
 ### 3) Effective burst time follows selected schedule
@@ -51,7 +51,7 @@ The estimator currently computes dynamic energy from operation and movement coun
   **Mitigation:** Default all fields to zero and keep names aligned with existing component taxonomy.
 
 - **[Metric interpretation]** Users may confuse power vs energy units.  
-  **Mitigation:** Document units clearly (`mW`, `pJ`, `ns`) and formulas in README/report notes.
+  **Mitigation:** Document units clearly (`nW`, `pJ`, `ns`) and formulas in README/report notes.
 
 - **[Backward-compatibility risk]** Existing tests may assume purely dynamic totals.  
   **Mitigation:** Keep zero defaults and add regression tests showing no-change behavior at zero leakage.

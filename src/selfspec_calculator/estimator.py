@@ -123,13 +123,14 @@ def _verify_setup_breakdown(model: ModelConfig, hardware: HardwareConfig) -> Bre
     return Breakdown.from_stage_breakdown(stages, components=components, channels=channels)
 
 
-def _total_leakage_power_mw(hardware: HardwareConfig) -> float:
+def _total_leakage_power_nw(hardware: HardwareConfig) -> float:
     leakage = hardware.leakage_power
     return float(sum(getattr(leakage, field) for field in type(leakage).model_fields))
 
 
-def _leakage_energy_pj(*, leakage_power_mw: float, burst_latency_ns: float) -> float:
-    return float(leakage_power_mw) * float(burst_latency_ns)
+def _leakage_energy_pj(*, leakage_power_nw: float, burst_latency_ns: float) -> float:
+    # nW * ns = 1e-6 pJ
+    return float(leakage_power_nw) * float(burst_latency_ns) * 1e-6
 
 
 def _kv_bytes_per_token_per_layer(*, d_model: int, n_heads: int, fmt) -> int:  # noqa: ANN001
@@ -1680,9 +1681,9 @@ def estimate_point(
 
         effective_burst_latency_ns = t_burst_pipe
 
-    leakage_power_mw = _total_leakage_power_mw(hardware)
+    leakage_power_nw = _total_leakage_power_nw(hardware)
     leakage_energy_pj = _leakage_energy_pj(
-        leakage_power_mw=leakage_power_mw,
+        leakage_power_nw=leakage_power_nw,
         burst_latency_ns=effective_burst_latency_ns,
     )
 
@@ -1720,7 +1721,7 @@ def estimate_sweep(
         paths_obj = InputPaths(**paths)
 
     committed_tokens = expected_committed_tokens_per_burst(stats)
-    leakage_power_mw = _total_leakage_power_mw(hardware)
+    leakage_power_nw = _total_leakage_power_nw(hardware)
 
     points: list[SweepPoint] = []
     for l_prompt in prompt_lengths:
@@ -1729,7 +1730,7 @@ def estimate_sweep(
         delta = BaselineDelta.from_metrics(speculative_metrics, baseline_metrics)
         burst_latency_ns = speculative_metrics.latency_ns_per_token * committed_tokens
         leakage_energy_pj = _leakage_energy_pj(
-            leakage_power_mw=leakage_power_mw,
+            leakage_power_nw=leakage_power_nw,
             burst_latency_ns=burst_latency_ns,
         )
         points.append(
@@ -1741,7 +1742,7 @@ def estimate_sweep(
                 breakdown=speculative_breakdown,
                 baseline_breakdown=baseline_breakdown,
                 leakage=LeakageSummary(
-                    total_power_mw=leakage_power_mw,
+                    total_power_nw=leakage_power_nw,
                     energy_pj=leakage_energy_pj,
                     burst_latency_ns=burst_latency_ns,
                 ),
@@ -1841,7 +1842,7 @@ def estimate_sweep(
             "Serialized phase accounting is step-indexed with context growth L_i = L_prompt + i.",
             "Layer-pipelined mode keeps draft serialized and uses outcome-conditioned verify wavefront execution.",
             "Layer-pipelined verify stops at first mismatch; full acceptance executes and commits one bonus token.",
-            "Leakage energy uses E_leak_burst[pJ] = P_leak_total[mW] * T_burst_effective[ns].",
+            "Leakage energy uses E_leak_burst[pJ] = P_leak_total[nW] * T_burst_effective[ns] * 1e-6.",
             "Leakage timing is schedule-aware: serialized uses serialized burst time, layer-pipelined uses pipelined burst time.",
             "Breakdown latencies are serialized sums; `soc.schedule` affects how latency/token is reported.",
             "Movement exclusions are explicit in `movement_accounting.excluded`.",

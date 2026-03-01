@@ -1,11 +1,11 @@
 ## ADDED Requirements
 
 ### Requirement: Hardware config SHALL define leakage power for all modeled components
-The hardware schema SHALL support leakage-power coefficients in mW for all modeled components so users can provide component-level static power inputs.
+The hardware schema SHALL support leakage-power coefficients in nW for all modeled components so users can provide component-level static power inputs.
 
 #### Scenario: Leakage coefficients default to zero
 - **WHEN** a hardware config omits leakage-power coefficients
-- **THEN** all leakage-power coefficients SHALL default to `0.0 mW`
+- **THEN** all leakage-power coefficients SHALL default to `0.0 nW`
 
 #### Scenario: Per-component leakage coefficients are accepted
 - **WHEN** a hardware config provides leakage-power coefficients per component
@@ -13,11 +13,11 @@ The hardware schema SHALL support leakage-power coefficients in mW for all model
 
 ### Requirement: Estimator SHALL compute burst leakage energy from summed leakage power and effective burst latency
 The estimator SHALL compute burst leakage energy as:
-`E_leak_burst_pJ = (sum of component leakage power in mW) * T_burst_effective_ns`.
+`E_leak_burst_pJ = (sum of component leakage power in nW) * T_burst_effective_ns * 1e-6`.
 
 #### Scenario: Leakage energy formula is applied
-- **WHEN** total component leakage power is `P_leak_total_mW` and effective burst latency is `T_burst_ns`
-- **THEN** leakage energy SHALL equal `P_leak_total_mW * T_burst_ns` in pJ
+- **WHEN** total component leakage power is `P_leak_total_nW` and effective burst latency is `T_burst_ns`
+- **THEN** leakage energy SHALL equal `P_leak_total_nW * T_burst_ns * 1e-6` in pJ
 
 ### Requirement: Leakage latency source SHALL be schedule-aware
 The effective burst latency used for leakage energy SHALL match the schedule used for latency/token reporting.
@@ -34,7 +34,7 @@ The effective burst latency used for leakage energy SHALL match the schedule use
 Leakage energy SHALL be added to burst total energy before per-token normalization and derived metric computation.
 
 #### Scenario: Zero leakage preserves legacy behavior
-- **WHEN** all leakage-power coefficients are `0.0 mW`
+- **WHEN** all leakage-power coefficients are `0.0 nW`
 - **THEN** energy/token results SHALL match prior dynamic-only behavior
 
 #### Scenario: Positive leakage increases burst and per-token energy
