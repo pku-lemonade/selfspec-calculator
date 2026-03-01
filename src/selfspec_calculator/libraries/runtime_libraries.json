@@ -476,9 +476,9 @@
     },
     "analog_periphery": {
       "io_buffers": {
-        "area_mm2_per_unit": 0.002179634736402568,
-        "energy_pj_per_op": 0.33363415023351967,
-        "latency_ns_per_op": 264.8006988131393
+        "area_mm2_per_unit": 0.0,
+        "energy_pj_per_op": 0.0,
+        "latency_ns_per_op": 0.0
       },
       "mux": {
         "area_mm2_per_unit": 0.0016374499108280757,
@@ -491,9 +491,9 @@
         "latency_ns_per_op": 1.97982421875
       },
       "subarray_switches": {
-        "area_mm2_per_unit": 0.052398235466519956,
-        "energy_pj_per_op": 8.020538269684211,
-        "latency_ns_per_op": 6.599764464821712
+        "area_mm2_per_unit": 0.0,
+        "energy_pj_per_op": 0.0,
+        "latency_ns_per_op": 0.0
       },
       "tia": {
         "area_mm2_per_unit": 0.0008563875,
@@ -501,9 +501,9 @@
         "latency_ns_per_op": 1.97982421875
       },
       "write_drivers": {
-        "area_mm2_per_unit": 0.0004093611303738651,
-        "energy_pj_per_op": 0.2506414844617848,
-        "latency_ns_per_op": 0.824970558102714
+        "area_mm2_per_unit": 0.0,
+        "energy_pj_per_op": 0.0,
+        "latency_ns_per_op": 0.0
       }
     },
     "array": {
@@ -515,34 +515,84 @@
     },
     "dac": {
       "1": {
-        "area_mm2_per_unit": 1.67e-07,
-        "energy_pj_per_conversion": 0.0035,
-        "latency_ns_per_conversion": 0.01
+        "area_mm2_per_unit": 0.0001355422766719243,
+        "energy_pj_per_conversion": 0.5206998241319651,
+        "latency_ns_per_conversion": 0.9019435043972803
       },
       "2": {
-        "area_mm2_per_unit": 1.67e-07,
-        "energy_pj_per_conversion": 0.0037,
-        "latency_ns_per_conversion": 0.01
+        "area_mm2_per_unit": 0.0002071047766719243,
+        "energy_pj_per_conversion": 1.2894881542100904,
+        "latency_ns_per_conversion": 0.9015724106472744
+      },
+      "3": {
+        "area_mm2_per_unit": 0.0002570735266719242,
+        "energy_pj_per_conversion": 2.0573170116319655,
+        "latency_ns_per_conversion": 0.9015880356472916
       },
       "4": {
-        "area_mm2_per_unit": 1.67e-07,
-        "energy_pj_per_conversion": 0.004,
-        "latency_ns_per_conversion": 0.01
+        "area_mm2_per_unit": 0.0003257922766719242,
+        "energy_pj_per_conversion": 2.82642663077259,
+        "latency_ns_per_conversion": 0.9016036606472804
+      },
+      "5": {
+        "area_mm2_per_unit": 0.00040857352667192414,
+        "energy_pj_per_conversion": 3.5936148631944653,
+        "latency_ns_per_conversion": 0.9016192856472973
+      },
+      "6": {
+        "area_mm2_per_unit": 0.00046191727667192414,
+        "energy_pj_per_conversion": 4.3553802440538405,
+        "latency_ns_per_conversion": 0.9016349106472858
+      },
+      "7": {
+        "area_mm2_per_unit": 0.0005325891516719241,
+        "energy_pj_per_conversion": 5.124808222569465,
+        "latency_ns_per_conversion": 0.9016505356473032
       },
       "8": {
-        "area_mm2_per_unit": 1.67e-07,
-        "energy_pj_per_conversion": 0.0045,
-        "latency_ns_per_conversion": 0.01
+        "area_mm2_per_unit": 0.0006040500891719243,
+        "energy_pj_per_conversion": 5.887219355381966,
+        "latency_ns_per_conversion": 0.9016661606472633
+      },
+      "9": {
+        "area_mm2_per_unit": 0.0007359172766719241,
+        "energy_pj_per_conversion": 6.6639915721788405,
+        "latency_ns_per_conversion": 0.9016856918973086
+      },
+      "10": {
+        "area_mm2_per_unit": 0.0008019641516719242,
+        "energy_pj_per_conversion": 7.434371943272591,
+        "latency_ns_per_conversion": 0.9016466293973087
+      },
+      "11": {
+        "area_mm2_per_unit": 0.0008699172766719241,
+        "energy_pj_per_conversion": 8.20475426749134,
+        "latency_ns_per_conversion": 0.9016700668972975
       },
       "12": {
-        "area_mm2_per_unit": 1.67e-07,
-        "energy_pj_per_conversion": 0.005,
-        "latency_ns_per_conversion": 0.01
+        "area_mm2_per_unit": 0.0009144172766719244,
+        "energy_pj_per_conversion": 8.975126581944465,
+        "latency_ns_per_conversion": 0.9016700668972859
+      },
+      "13": {
+        "area_mm2_per_unit": 0.0009745657141719244,
+        "energy_pj_per_conversion": 9.745835078038215,
+        "latency_ns_per_conversion": 0.9017091293972743
+      },
+      "14": {
+        "area_mm2_per_unit": 0.0010192375891719244,
+        "energy_pj_per_conversion": 10.516235224522589,
+        "latency_ns_per_conversion": 0.9017091293972637
+      },
+      "15": {
+        "area_mm2_per_unit": 0.0010896672766719244,
+        "energy_pj_per_conversion": 11.286919062413215,
+        "latency_ns_per_conversion": 0.9017091293972521
       },
       "16": {
-        "area_mm2_per_unit": 1.67e-07,
-        "energy_pj_per_conversion": 0.0055,
-        "latency_ns_per_conversion": 0.01
+        "area_mm2_per_unit": 0.0011351829016719244,
+        "energy_pj_per_conversion": 12.023475703038216,
+        "latency_ns_per_conversion": 0.9017481918972974
       }
     },
     "digital": {
@@ -550,7 +600,7 @@
         "energy_pj_per_mac": 5.9854,
         "latency_ns_per_mac": 2.08
       },
-      "digital_overhead_area_mm2_per_layer": 0.020426,
+      "digital_overhead_area_mm2_per_layer": 0.022741,
       "elementwise": {
         "energy_pj_per_mac": 3.6208,
         "latency_ns_per_mac": 2.05
@@ -566,13 +616,13 @@
     },
     "memory": {
       "fabric": {
-        "area_mm2": 1.0,
-        "read_bandwidth_GBps": 2000.0,
-        "read_energy_pj_per_byte": 0.01,
-        "read_latency_ns": 10.0,
-        "write_bandwidth_GBps": 2000.0,
-        "write_energy_pj_per_byte": 0.01,
-        "write_latency_ns": 10.0
+        "area_mm2": 0.01464,
+        "read_bandwidth_GBps": 16.0,
+        "read_energy_pj_per_byte": 0.08246875,
+        "read_latency_ns": 2.0,
+        "write_bandwidth_GBps": 16.0,
+        "write_energy_pj_per_byte": 0.08246875,
+        "write_latency_ns": 2.0
       },
       "hbm": {
         "area_mm2": 5916.6,
@@ -603,8 +653,8 @@
       "control": {
         "energy_pj_per_token": 0.1178,
         "latency_ns_per_token": 1.96,
-        "energy_pj_per_burst": 0.0,
-        "latency_ns_per_burst": 0.0
+        "energy_pj_per_burst": 0.7604,
+        "latency_ns_per_burst": 1.85
       },
       "verify_setup": {
         "energy_pj_per_burst": 0.1724,
@@ -621,13 +671,13 @@
       "array.latency_ns_per_activation": "science-paper: reference/science.adi9405_sm.pdf (10 ns per VMM)",
       "analog_periphery.tia.*": "neurosim-proxy (65nm): ADC bucket split from ../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM main output",
       "analog_periphery.snh.*": "neurosim-proxy (65nm): ADC bucket split from ../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM main output",
-      "analog_periphery.io_buffers.*": "neurosim-proxy (65nm): buffer latency/energy terms from ../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM main output",
-      "analog_periphery.mux.*": "neurosim-proxy (65nm): residual Other-periphery bucket from ../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM main output",
-      "analog_periphery.subarray_switches.*": "neurosim-proxy (65nm): residual Other-periphery bucket from ../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM main output",
-      "analog_periphery.write_drivers.*": "neurosim-proxy (65nm): residual Other-periphery bucket from ../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM main output",
-      "dac.*": "placeholder (no standalone DAC coefficient export in this NeuroSim flow): copied from puma_like_v1 defaults",
+      "analog_periphery.io_buffers.*": "absorbed-into-dac: packed into dac.* NeuroSim-derived DAC-like path to avoid double counting",
+      "analog_periphery.mux.*": "neurosim-proxy (65nm): output-side mux split restored from Other-periphery bucket; kept separate from dac.* to match ADC routing boundary",
+      "analog_periphery.subarray_switches.*": "absorbed-into-dac: packed into dac.* NeuroSim-derived DAC-like path to avoid double counting",
+      "analog_periphery.write_drivers.*": "absorbed-into-dac: packed into dac.* NeuroSim-derived DAC-like path to avoid double counting",
+      "dac.*": "neurosim-packed-dac (65nm): sweep numBitInput=1..16 using ../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM main with /tmp/ns_*_fill2 inputs; packed DAC-like latency/energy from (OtherPeriphery - buffer - IC), then minus restored mux proxy to avoid double counting; area similarly minus mux area proxy",
       "memory.sram.*": "cacti: ../cacti with reference/cacti/science_adi9405_v1_sram.cfg (cache type=ram, 2MiB, 64B block, 65nm); converted read/write nJ per access to pJ/byte by dividing by 64B; bandwidth from block_size/cycle_time; area from data-array area; capacity_bytes set to 2MiB for area-per-byte derivations (e.g., attention SRAM-CIM storage area)",
-      "memory.fabric.*": "placeholder: copied from science_soc_v1 defaults",
+      "memory.fabric.*": "design-compiler: reference/final_ppa_summary.csv row memory_fabric_axi_dma; area_mm2 from Area(mm2), latency_ns from Delay(ns); energy_pj_per_byte from Energy(pJ/cycle)/(DATA_W/8) with DATA_W=256 from reference/dc_rtl/memory_fabric_axi_dma.v; bandwidth_GBps=(DATA_W/8)/Delay(ns)",
       "memory.hbm.area_mm2": "cacti-dram-proxy (8GiB profile): ../cacti with reference/cacti/science_adi9405_v1_dram.cfg (cache type=main memory, comm-dram cell, 2GiB proxy, 64B block, 65nm); area scaled 4x from 2GiB CACTI data-array area to represent 8GiB capacity",
       "memory.hbm.read_energy_pj_per_byte": "cacti-dram-proxy (8GiB profile): ../cacti with reference/cacti/science_adi9405_v1_dram.cfg; converted read nJ/access to pJ/byte by dividing by 64B",
       "memory.hbm.write_energy_pj_per_byte": "cacti-dram-proxy (8GiB profile): ../cacti with reference/cacti/science_adi9405_v1_dram.cfg; converted write nJ/access to pJ/byte by dividing by 64B",
@@ -637,24 +687,30 @@
       "memory.hbm.write_latency_ns": "ramulator2-derived assumption: set equal to read latency because Generic controller exports avg_read_latency only (no avg_write_latency stat)",
       "leakage_power.arrays_nw": "neurosim (65nm): analog-only share of chip leakage power from ../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM main output (reference/neurosim/science_adi9405_v1_neurosim_65nm_fill2.out.txt), allocated by area share",
       "leakage_power.adc_*_nw": "neurosim (65nm): ADC share of analog-only chip leakage power from NeuroSim fill2 output, split equally into draft/residual",
-      "leakage_power.tia/snh/mux/io_buffers/subarray_switches/write_drivers_nw": "neurosim-proxy (65nm): other-periphery share of analog-only chip leakage power from NeuroSim fill2 output, split by analog_periphery.* area_mm2_per_unit ratios",
+      "leakage_power.tia/snh_nw": "neurosim-proxy (65nm): remaining other-periphery share of analog-only chip leakage power from NeuroSim fill2 output after packed-DAC absorption",
       "leakage_power.sram_nw": "cacti: ../cacti with reference/cacti/science_adi9405_v1_sram.cfg; uses \"Total leakage power of a bank (mW)\" converted to nW",
       "leakage_power.hbm_nw": "cacti-dram-proxy (8GiB profile): ../cacti with reference/cacti/science_adi9405_v1_dram.cfg; uses 2GiB \"Total leakage power of a bank (mW)\" scaled by 4x for 8GiB then converted to nW",
       "digital.attention.*": "design-compiler: reference/final_ppa_summary.csv row attention_cim_mac; energy_pj_per_mac from Energy(pJ/cycle), latency_ns_per_mac from Delay(ns), assuming 1 op/cycle",
       "digital.softmax.*": "design-compiler: reference/final_ppa_summary.csv row softmax_unit; energy/latency mapped as per-op (1 op/cycle assumption)",
       "digital.elementwise.*": "design-compiler: reference/final_ppa_summary.csv row ffn_elementwise_unit; quantize_dequantize is folded into soc.buffers_add.* in this schema",
       "digital.kv_cache.*": "design-compiler: reference/final_ppa_summary.csv row kv_cache_datapath; energy/latency mapped as per-op (1 op/cycle assumption)",
-      "digital.digital_overhead_area_mm2_per_layer": "design-compiler: sum of module areas in reference/final_ppa_summary.csv excluding attention_cim_mac (softmax, ffn_elementwise, kv_cache_datapath, quantize_dequantize, buffers_add, control_scheduler, verify_setup)",
+      "digital.digital_overhead_area_mm2_per_layer": "design-compiler: sum of module areas in reference/final_ppa_summary.csv excluding attention_cim_mac (softmax, ffn_elementwise, kv_cache_datapath, quantize_dequantize, buffers_add, control_scheduler, verify_setup, dma_descriptor_setup)",
       "soc.attention_cim_mac_area_mm2_per_unit": "design-compiler: reference/final_ppa_summary.csv row attention_cim_mac Area(mm2)",
       "soc.buffers_add.*": "design-compiler: reference/final_ppa_summary.csv; buffers_add_unit + quantize_dequantize_unit folded into soc.buffers_add energy/latency/area due schema (no separate quantize field)",
-      "soc.control.*": "design-compiler: reference/final_ppa_summary.csv row control_scheduler_unit mapped to per-token control; per-burst control kept at 0.0",
+      "soc.control.*": "design-compiler: reference/final_ppa_summary.csv; token terms from control_scheduler_unit, burst terms from dma_descriptor_setup_unit",
       "soc.verify_setup.*": "design-compiler: reference/final_ppa_summary.csv row verify_setup_unit mapped to per-burst setup energy/latency",
       "leakage_power.attention_engine_nw": "design-compiler: reference/final_ppa_summary.csv row attention_cim_mac Leakage(nW)",
       "leakage_power.softmax_unit_nw": "design-compiler: reference/final_ppa_summary.csv row softmax_unit Leakage(nW)",
       "leakage_power.elementwise_unit_nw": "design-compiler: reference/final_ppa_summary.csv row ffn_elementwise_unit Leakage(nW)",
       "leakage_power.kv_cache_nw": "design-compiler: reference/final_ppa_summary.csv row kv_cache_datapath Leakage(nW)",
       "leakage_power.buffers_add_nw": "design-compiler: reference/final_ppa_summary.csv; buffers_add_unit + quantize_dequantize_unit leakage folded into buffers_add_nw",
-      "leakage_power.control_nw": "design-compiler: reference/final_ppa_summary.csv; control_scheduler_unit + verify_setup_unit leakage folded into control_nw (no separate verify_setup leakage field in schema)"
+      "leakage_power.control_nw": "design-compiler: reference/final_ppa_summary.csv; control_scheduler_unit + verify_setup_unit + dma_descriptor_setup_unit leakage folded into control_nw",
+      "leakage_power.dac_nw": "derived-neurosim-packed-dac: prior packed dac_nw minus restored mux_nw (mux kept as separate output-side routing block)",
+      "leakage_power.io_buffers_nw": "absorbed-into-dac: set to 0.0 to avoid double counting with leakage_power.dac_nw",
+      "leakage_power.mux_nw": "neurosim-proxy (65nm): restored output-side mux leakage split from analog-only chip leakage share",
+      "leakage_power.subarray_switches_nw": "absorbed-into-dac: set to 0.0 to avoid double counting with leakage_power.dac_nw",
+      "leakage_power.write_drivers_nw": "absorbed-into-dac: set to 0.0 to avoid double counting with leakage_power.dac_nw",
+      "leakage_power.fabric_nw": "design-compiler: reference/final_ppa_summary.csv row memory_fabric_axi_dma Leakage(nW)"
     },
     "source_notes": {
       "neurosim_run_used": "./main /tmp/ns_net_fill2.csv 1 1 128 128 /tmp/ns_w_fill2.csv /tmp/ns_i_fill2.csv",
@@ -714,29 +770,56 @@
         "Energy(pJ/cycle) is mapped to per-op energy with 1 operation per cycle assumption.",
         "Delay(ns) is used as per-op latency proxy.",
         "quantize_dequantize_unit is folded into soc.buffers_add.* because schema has no standalone quantize field.",
-        "verify_setup_unit leakage is folded into leakage_power.control_nw because schema has no standalone verify_setup leakage field."
-      ]
+        "verify_setup_unit leakage is folded into leakage_power.control_nw because schema has no standalone verify_setup leakage field.",
+        "dma_descriptor_setup_unit is mapped to soc.control.*_per_burst; memory_fabric_axi_dma uses DATA_W=256 for per-byte and bandwidth conversion."
+      ],
+      "neurosim_dac_sweep_mode": "packed-DAC sweep (MLSA default in repo): numBitInput=bits 1..16 with fixed synapseBit=1, subarray=128x128, /tmp/ns_net_fill2.csv + /tmp/ns_w_fill2.csv + /tmp/ns_i_fill2.csv",
+      "neurosim_dac_sweep_output": "reference/neurosim/science_adi9405_v1_neurosim_65nm_dac_sweep_packed.json",
+      "neurosim_dac_sweep_outputs_txt_pattern": "reference/neurosim/science_adi9405_v1_neurosim_65nm_dac{bits}b_packed.out.txt",
+      "neurosim_dac_packing_rule": "packed_dac_energy=OtherPeripheryEnergy-bufferEnergy-icEnergy; packed_dac_latency=OtherPeripheryLatency-bufferLatency-icLatency; packed_dac_area=OtherPeripheryArea",
+      "neurosim_dac_normalization": {
+        "area_denominator_units": 128,
+        "energy_denominator_conversions": 4096,
+        "latency_denominator_ops": 256
+      },
+      "neurosim_dac_mux_split": "Mux is treated as ADC-side/output routing, not DAC. Applied fixed mux proxy subtraction from dac.* and moved mux leakage back to leakage_power.mux_nw.",
+      "dc_fabric_mapping": {
+        "module": "memory_fabric_axi_dma",
+        "data_width_bits": 256,
+        "bytes_per_cycle": 32.0,
+        "energy_pj_per_byte_formula": "Energy(pJ/cycle)/(DATA_W/8)",
+        "bandwidth_gbps_formula": "(DATA_W/8)/Delay(ns)"
+      },
+      "dc_control_burst_mapping": {
+        "module": "dma_descriptor_setup_unit",
+        "maps_to": [
+          "soc.control.energy_pj_per_burst",
+          "soc.control.latency_ns_per_burst"
+        ],
+        "energy_source": "Energy(pJ/cycle)",
+        "latency_source": "Delay(ns)"
+      }
     },
     "leakage_power": {
       "arrays_nw": 91.12174474446854,
-      "dac_nw": 0.0,
+      "dac_nw": 251.4134112694286,
       "adc_draft_nw": 32.20902527793195,
       "adc_residual_nw": 32.20902527793195,
       "tia_nw": 3.915587264949687,
       "snh_nw": 3.915587264949687,
       "mux_nw": 7.486772072025123,
-      "io_buffers_nw": 9.965757342441202,
-      "subarray_switches_nw": 239.57596706927714,
-      "write_drivers_nw": 1.8716868577102244,
+      "io_buffers_nw": 0.0,
+      "subarray_switches_nw": 0.0,
+      "write_drivers_nw": 0.0,
       "attention_engine_nw": 62.789,
       "softmax_unit_nw": 40.4176,
       "elementwise_unit_nw": 48.6942,
       "kv_cache_nw": 109.9762,
       "buffers_add_nw": 82.1292,
-      "control_nw": 9.9173,
+      "control_nw": 32.677099999999996,
       "sram_nw": 2520840000.0,
       "hbm_nw": 242635600.0,
-      "fabric_nw": 0.0
+      "fabric_nw": 143.5084
     }
   }
 }
