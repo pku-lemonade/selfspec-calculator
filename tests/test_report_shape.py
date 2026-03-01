@@ -75,6 +75,42 @@ def test_knob_report_includes_stage_component_and_library_metadata() -> None:
     assert payload["area_breakdown_mm2"]["on_chip_components"]["arrays_mm2"] > 0.0
 
 
+def test_report_exposes_layer_pipelined_verify_wavefront_policy_metadata() -> None:
+    model = ModelConfig.model_validate(
+        {
+            "n_layers": 2,
+            "d_model": 64,
+            "n_heads": 8,
+            "activation_bits": 12,
+            "ffn_type": "mlp",
+            "ffn_expansion": 4.0,
+        }
+    )
+    hardware = HardwareConfig.model_validate(
+        {
+            "reuse_policy": "reuse",
+            "library": "puma_like_v1",
+            "soc": {"schedule": "layer-pipelined"},
+            "analog": {
+                "xbar_size": 128,
+                "num_columns_per_adc": 16,
+                "dac_bits": 4,
+                "adc": {"draft_bits": 4, "residual_bits": 12},
+            },
+        }
+    )
+    stats = SpeculationStats(k=4, histogram={0: 0.5, 4: 0.5})
+
+    report = estimate_sweep(model=model, hardware=hardware, stats=stats, prompt_lengths=[64]).model_dump(mode="json")
+    policy = report["pipeline_policy"]
+    assert policy is not None
+    assert policy["schedule"] == "layer-pipelined"
+    assert policy["draft_stage"] == "serialized"
+    assert policy["verify_stage"] == "wavefront"
+    assert policy["mismatch_policy"] == "stop-at-first-mismatch"
+    assert policy["bonus_in_verify_wavefront"] is True
+
+
 def test_area_breakdown_reports_memory_and_periphery_area_and_excludes_hbm_from_on_chip_total() -> None:
     model = ModelConfig.model_validate(
         {

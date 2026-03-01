@@ -32,7 +32,7 @@ from .report import (
     StageBreakdown,
     SweepPoint,
 )
-from .stats import SpeculationStats, expected_committed_tokens_per_burst
+from .stats import SpeculationStats, expected_committed_tokens_per_burst, normalize_histogram
 
 
 ANALOG_STAGES = ("qkv", "wo", "ffn")
@@ -78,6 +78,50 @@ MOVEMENT_ACCOUNTING_COVERAGE = MovementAccountingCoverage(
 )
 
 
+def _pipeline_policy_metadata(schedule: ScheduleMode) -> dict[str, Any]:
+    if schedule == ScheduleMode.layer_pipelined:
+        return {
+            "schedule": schedule.value,
+            "draft_stage": "serialized",
+            "verify_stage": "wavefront",
+            "mismatch_policy": "stop-at-first-mismatch",
+            "full_accept_policy": "execute-bonus-and-commit",
+            "bonus_in_verify_wavefront": True,
+        }
+    return {
+        "schedule": schedule.value,
+        "draft_stage": "serialized",
+        "verify_stage": "serialized",
+        "mismatch_policy": "not-modeled",
+        "full_accept_policy": "always-charge-verify-bonus-phase",
+        "bonus_in_verify_wavefront": False,
+    }
+
+
+def _executed_verify_drafted_steps_for_outcome(*, k: int, accepted_prefix: int) -> int:
+    if accepted_prefix < k:
+        return accepted_prefix + 1
+    return k
+
+
+def _executes_verify_bonus_for_outcome(*, k: int, accepted_prefix: int) -> bool:
+    return accepted_prefix == k
+
+
+def _verify_setup_breakdown(model: ModelConfig, hardware: HardwareConfig) -> Breakdown:
+    energy = float(model.n_layers) * (
+        hardware.soc.control.energy_pj_per_burst + hardware.soc.verify_setup.energy_pj_per_burst
+    )
+    latency = float(model.n_layers) * (
+        hardware.soc.control.latency_ns_per_burst + hardware.soc.verify_setup.latency_ns_per_burst
+    )
+
+    stages = StageBreakdown().add_energy_latency("control", energy, latency)
+    components = ComponentBreakdown().add_energy_latency("control", energy, latency)
+    channels = CostChannelBreakdown().add_energy_latency("compute", energy, latency)
+    return Breakdown.from_stage_breakdown(stages, components=components, channels=channels)
+
+
 def _kv_bytes_per_token_per_layer(*, d_model: int, n_heads: int, fmt) -> int:  # noqa: ANN001
     payload_bytes = 2 * d_model * int(fmt.value_bytes_per_elem)
     metadata_bytes = n_heads * int(fmt.scales_per_token_per_head) * int(fmt.scale_bytes)
@@ -112,40 +156,12 @@ def _kv_memory_traffic_by_phase(
         return {"draft": z, "verify_drafted": z, "verify_bonus": z}
 
     k = stats.k
-    n_layers = model.n_layers
-    d_model = model.d_model
-    n_heads = model.n_heads
-
-    fmt_hbm = hardware.memory.kv_cache.hbm
-    fmt_sram = hardware.memory.kv_cache.resolved_sram()
-
-    bytes_hbm_token = _kv_bytes_per_token_per_layer(d_model=d_model, n_heads=n_heads, fmt=fmt_hbm)
-    bytes_sram_token = _kv_bytes_per_token_per_layer(d_model=d_model, n_heads=n_heads, fmt=fmt_sram)
-
-    def tokens_to_bytes(tokens: float, bytes_per_token: int) -> float:
-        return float(tokens) * float(n_layers) * float(bytes_per_token)
-
-    def phase_step_traffic(
-        *,
-        prompt_tokens_from_hbm: float,
-        speculative_tokens_from_sram: float,
-        speculative_tokens_to_sram: float,
-        committed_tokens_to_hbm: float,
-    ) -> MemoryTraffic:
-        traffic = MemoryTraffic(
-            sram_read_bytes=tokens_to_bytes(speculative_tokens_from_sram, bytes_sram_token),
-            sram_write_bytes=tokens_to_bytes(speculative_tokens_to_sram, bytes_sram_token),
-            hbm_read_bytes=tokens_to_bytes(prompt_tokens_from_hbm, bytes_hbm_token),
-            hbm_write_bytes=tokens_to_bytes(committed_tokens_to_hbm, bytes_hbm_token),
-        )
-        traffic.fabric_read_bytes = traffic.sram_read_bytes + traffic.hbm_read_bytes
-        traffic.fabric_write_bytes = traffic.sram_write_bytes + traffic.hbm_write_bytes
-        return traffic
-
     draft = MemoryTraffic()
     verify_drafted = MemoryTraffic()
     for i in range(k):
-        step = phase_step_traffic(
+        step = _kv_memory_step_traffic(
+            model=model,
+            hardware=hardware,
             prompt_tokens_from_hbm=float(l_prompt),
             speculative_tokens_from_sram=float(i),
             speculative_tokens_to_sram=1.0,
@@ -155,13 +171,64 @@ def _kv_memory_traffic_by_phase(
         verify_drafted = verify_drafted.plus(step)
 
     committed_tokens = expected_committed_tokens_per_burst(stats)
-    verify_bonus = phase_step_traffic(
+    verify_bonus = _kv_memory_step_traffic(
+        model=model,
+        hardware=hardware,
         prompt_tokens_from_hbm=float(l_prompt),
         speculative_tokens_from_sram=float(k),
         speculative_tokens_to_sram=1.0,
         committed_tokens_to_hbm=committed_tokens,
     )
     return {"draft": draft, "verify_drafted": verify_drafted, "verify_bonus": verify_bonus}
+
+
+def _kv_memory_step_traffic(
+    *,
+    model: ModelConfig,
+    hardware: HardwareConfig,
+    prompt_tokens_from_hbm: float,
+    speculative_tokens_from_sram: float,
+    speculative_tokens_to_sram: float,
+    committed_tokens_to_hbm: float,
+) -> MemoryTraffic:
+    if hardware.memory is None:
+        return MemoryTraffic()
+
+    fmt_hbm = hardware.memory.kv_cache.hbm
+    fmt_sram = hardware.memory.kv_cache.resolved_sram()
+    bytes_hbm_token = _kv_bytes_per_token_per_layer(d_model=model.d_model, n_heads=model.n_heads, fmt=fmt_hbm)
+    bytes_sram_token = _kv_bytes_per_token_per_layer(d_model=model.d_model, n_heads=model.n_heads, fmt=fmt_sram)
+
+    def tokens_to_bytes(tokens: float, bytes_per_token: int) -> float:
+        return float(tokens) * float(model.n_layers) * float(bytes_per_token)
+
+    traffic = MemoryTraffic(
+        sram_read_bytes=tokens_to_bytes(speculative_tokens_from_sram, bytes_sram_token),
+        sram_write_bytes=tokens_to_bytes(speculative_tokens_to_sram, bytes_sram_token),
+        hbm_read_bytes=tokens_to_bytes(prompt_tokens_from_hbm, bytes_hbm_token),
+        hbm_write_bytes=tokens_to_bytes(committed_tokens_to_hbm, bytes_hbm_token),
+    )
+    traffic.fabric_read_bytes = traffic.sram_read_bytes + traffic.hbm_read_bytes
+    traffic.fabric_write_bytes = traffic.sram_write_bytes + traffic.hbm_write_bytes
+    return traffic
+
+
+def _memory_cost_from_traffic(*, hardware: HardwareConfig, traffic: MemoryTraffic) -> tuple[float, float]:
+    if hardware.memory is None:
+        return (0.0, 0.0)
+
+    sram_e, sram_t = _mem_energy_latency(
+        tech=hardware.memory.sram, read_bytes=traffic.sram_read_bytes, write_bytes=traffic.sram_write_bytes
+    )
+    hbm_e, hbm_t = _mem_energy_latency(
+        tech=hardware.memory.hbm, read_bytes=traffic.hbm_read_bytes, write_bytes=traffic.hbm_write_bytes
+    )
+    fabric_e, fabric_t = _mem_energy_latency(
+        tech=hardware.memory.fabric,
+        read_bytes=traffic.fabric_read_bytes,
+        write_bytes=traffic.fabric_write_bytes,
+    )
+    return (sram_e + hbm_e + fabric_e, sram_t + hbm_t + fabric_t)
 
 
 def _add_memory_traffic_costs(
@@ -184,9 +251,7 @@ def _add_memory_traffic_costs(
         read_bytes=traffic.fabric_read_bytes,
         write_bytes=traffic.fabric_write_bytes,
     )
-
-    mem_energy = sram_e + hbm_e + fabric_e
-    mem_latency = sram_t + hbm_t + fabric_t
+    mem_energy, mem_latency = _memory_cost_from_traffic(hardware=hardware, traffic=traffic)
 
     stages = breakdown.stages.add_energy_latency("kv_cache", mem_energy, mem_latency)
 
@@ -1416,7 +1481,7 @@ def estimate_point(
             )
 
     if hardware.mode == HardwareMode.legacy:
-        draft_template, _verify_bonus_template = _token_step_costs_legacy(model, hardware, l_prompt)
+        draft_template, _ = _token_step_costs_legacy(model, hardware, l_prompt)
         verify_drafted_template = _verify_drafted_token_additional_stage_legacy(model, hardware, l_prompt)
 
         def step_costs(context_len: int) -> tuple[Breakdown, Breakdown, Breakdown]:
@@ -1426,7 +1491,7 @@ def estimate_point(
 
     else:
         specs = hardware.resolve_knob_specs()
-        draft_template, _verify_bonus_template = _token_step_costs_knob(model, hardware, specs, l_prompt)
+        draft_template, _ = _token_step_costs_knob(model, hardware, specs, l_prompt)
         verify_drafted_template = _verify_drafted_token_additional_stage_knob(model, hardware, specs, l_prompt)
 
         def step_costs(context_len: int) -> tuple[Breakdown, Breakdown, Breakdown]:
@@ -1434,27 +1499,91 @@ def estimate_point(
             verify_drafted_step = _verify_drafted_token_additional_stage_knob(model, hardware, specs, context_len)
             return draft_step, verify_drafted_step, verify_full_step
 
+    hist = normalize_histogram(stats.histogram)
+
     draft_phase = draft_template.scale(0.0)
-    verify_drafted_phase = verify_drafted_template.scale(0.0)
+    verify_drafted_steps: list[Breakdown] = []
     for i in range(stats.k):
         context_len = l_prompt + i
         draft_step_i, verify_drafted_step_i, _verify_full_step_i = step_costs(context_len)
         draft_phase = _sum_breakdowns(draft_phase, draft_step_i)
-        verify_drafted_phase = _sum_breakdowns(verify_drafted_phase, verify_drafted_step_i)
+        verify_drafted_steps.append(verify_drafted_step_i)
 
-    _, _, verify_bonus_phase = step_costs(l_prompt + stats.k)
+    _, _, verify_bonus_full_step = step_costs(l_prompt + stats.k)
+
+    if hardware.soc.schedule == ScheduleMode.layer_pipelined:
+        verify_drafted_phase = verify_drafted_template.scale(0.0)
+        for i, verify_step_i in enumerate(verify_drafted_steps):
+            p_execute_i = sum(prob for accepted_prefix, prob in hist.items() if accepted_prefix >= i)
+            verify_drafted_phase = _sum_breakdowns(verify_drafted_phase, verify_step_i.scale(p_execute_i))
+
+        p_full_accept = hist.get(stats.k, 0.0)
+        verify_setup_phase = _verify_setup_breakdown(model, hardware)
+        verify_bonus_phase = _sum_breakdowns(
+            verify_setup_phase.scale(1.0 - p_full_accept),
+            verify_bonus_full_step.scale(p_full_accept),
+        )
+    else:
+        verify_drafted_phase = verify_drafted_template.scale(0.0)
+        for verify_step_i in verify_drafted_steps:
+            verify_drafted_phase = _sum_breakdowns(verify_drafted_phase, verify_step_i)
+        verify_bonus_phase = verify_bonus_full_step
+
+    committed = expected_committed_tokens_per_burst(stats)
+    if committed <= 0:
+        raise ValueError("Expected committed tokens per burst must be > 0")
 
     if hardware.memory is not None:
-        traffic = _kv_memory_traffic_by_phase(model=model, hardware=hardware, stats=stats, l_prompt=l_prompt)
-        draft_phase = _add_memory_traffic_costs(breakdown=draft_phase, traffic=traffic["draft"], hardware=hardware)
+        if hardware.soc.schedule == ScheduleMode.layer_pipelined:
+            draft_traffic = MemoryTraffic()
+            verify_drafted_traffic = MemoryTraffic()
+            for i in range(stats.k):
+                step_traffic_i = _kv_memory_step_traffic(
+                    model=model,
+                    hardware=hardware,
+                    prompt_tokens_from_hbm=float(l_prompt),
+                    speculative_tokens_from_sram=float(i),
+                    speculative_tokens_to_sram=1.0,
+                    committed_tokens_to_hbm=0.0,
+                )
+                draft_traffic = draft_traffic.plus(step_traffic_i)
+
+                p_execute_i = sum(prob for accepted_prefix, prob in hist.items() if accepted_prefix >= i)
+                verify_drafted_traffic = verify_drafted_traffic.plus(step_traffic_i.scale(p_execute_i))
+
+            p_full_accept = hist.get(stats.k, 0.0)
+            bonus_step_traffic = _kv_memory_step_traffic(
+                model=model,
+                hardware=hardware,
+                prompt_tokens_from_hbm=float(l_prompt),
+                speculative_tokens_from_sram=float(stats.k),
+                speculative_tokens_to_sram=1.0,
+                committed_tokens_to_hbm=0.0,
+            )
+            commit_traffic = _kv_memory_step_traffic(
+                model=model,
+                hardware=hardware,
+                prompt_tokens_from_hbm=0.0,
+                speculative_tokens_from_sram=0.0,
+                speculative_tokens_to_sram=0.0,
+                committed_tokens_to_hbm=committed,
+            )
+            verify_bonus_traffic = bonus_step_traffic.scale(p_full_accept).plus(commit_traffic)
+        else:
+            traffic = _kv_memory_traffic_by_phase(model=model, hardware=hardware, stats=stats, l_prompt=l_prompt)
+            draft_traffic = traffic["draft"]
+            verify_drafted_traffic = traffic["verify_drafted"]
+            verify_bonus_traffic = traffic["verify_bonus"]
+
+        draft_phase = _add_memory_traffic_costs(breakdown=draft_phase, traffic=draft_traffic, hardware=hardware)
         verify_drafted_phase = _add_memory_traffic_costs(
             breakdown=verify_drafted_phase,
-            traffic=traffic["verify_drafted"],
+            traffic=verify_drafted_traffic,
             hardware=hardware,
         )
         verify_bonus_phase = _add_memory_traffic_costs(
             breakdown=verify_bonus_phase,
-            traffic=traffic["verify_bonus"],
+            traffic=verify_bonus_traffic,
             hardware=hardware,
         )
 
@@ -1463,43 +1592,86 @@ def estimate_point(
     e_burst = total_phase.energy_pj
     t_burst = total_phase.latency_ns
 
-    committed = expected_committed_tokens_per_burst(stats)
-    if committed <= 0:
-        raise ValueError("Expected committed tokens per burst must be > 0")
-
     energy_per_token_pj = e_burst / committed
     latency_per_token_ns = t_burst / committed
 
     if hardware.soc.schedule == ScheduleMode.layer_pipelined:
         if hardware.mode == HardwareMode.legacy:
-            max_layer_draft, max_layer_verify_drafted, max_layer_verify_bonus = _max_layer_compute_latencies_ns_legacy(
-                model=model,
-                hardware=hardware,
-                l_prompt=l_prompt,
-            )
+
+            def max_layer_latencies(context_len: int) -> tuple[float, float, float]:
+                return _max_layer_compute_latencies_ns_legacy(
+                    model=model,
+                    hardware=hardware,
+                    l_prompt=context_len,
+                )
+
         else:
             specs = hardware.resolve_knob_specs()
-            max_layer_draft, max_layer_verify_drafted, max_layer_verify_bonus = _max_layer_compute_latencies_ns_knob(
-                model=model,
-                hardware=hardware,
-                specs=specs,
-                l_prompt=l_prompt,
-            )
 
-        mem_draft_per_step = 0.0
-        mem_verify_drafted_per_step = 0.0
-        mem_verify_bonus = 0.0
-        if hardware.memory is not None:
-            if stats.k > 0:
-                mem_draft_per_step = draft_phase.stages.kv_cache_latency_ns / float(stats.k)
-                mem_verify_drafted_per_step = verify_drafted_phase.stages.kv_cache_latency_ns / float(stats.k)
-            mem_verify_bonus = verify_bonus_phase.stages.kv_cache_latency_ns
+            def max_layer_latencies(context_len: int) -> tuple[float, float, float]:
+                return _max_layer_compute_latencies_ns_knob(
+                    model=model,
+                    hardware=hardware,
+                    specs=specs,
+                    l_prompt=context_len,
+                )
 
-        t_draft = max(max_layer_draft, mem_draft_per_step)
-        t_verify_drafted = max(max_layer_verify_drafted, mem_verify_drafted_per_step)
-        t_verify_bonus = max(max_layer_verify_bonus, mem_verify_bonus)
+        verify_step_periods: list[float] = []
+        for i in range(stats.k):
+            context_len = l_prompt + i
+            _max_draft_step, max_verify_drafted_step, _max_verify_bonus_step = max_layer_latencies(context_len)
+            mem_verify_step = 0.0
+            if hardware.memory is not None:
+                verify_step_traffic = _kv_memory_step_traffic(
+                    model=model,
+                    hardware=hardware,
+                    prompt_tokens_from_hbm=float(l_prompt),
+                    speculative_tokens_from_sram=float(i),
+                    speculative_tokens_to_sram=1.0,
+                    committed_tokens_to_hbm=0.0,
+                )
+                _mem_energy, mem_verify_step = _memory_cost_from_traffic(hardware=hardware, traffic=verify_step_traffic)
+            verify_step_periods.append(max(max_verify_drafted_step, mem_verify_step))
 
-        t_burst_pipe = float(stats.k) * t_draft + float(stats.k) * t_verify_drafted + t_verify_bonus
+        _unused_draft, _unused_verify_drafted, max_verify_bonus_step = max_layer_latencies(l_prompt + stats.k)
+        verify_setup_period = hardware.soc.control.latency_ns_per_burst + hardware.soc.verify_setup.latency_ns_per_burst
+        draft_serial_latency = draft_phase.latency_ns
+
+        t_burst_pipe = 0.0
+        for accepted_prefix, prob in hist.items():
+            executed_steps = _executed_verify_drafted_steps_for_outcome(k=stats.k, accepted_prefix=accepted_prefix)
+            verify_wavefront_latency = sum(verify_step_periods[:executed_steps])
+            committed_tokens_outcome = accepted_prefix + 1
+
+            if _executes_verify_bonus_for_outcome(k=stats.k, accepted_prefix=accepted_prefix):
+                mem_bonus = 0.0
+                if hardware.memory is not None:
+                    bonus_traffic = _kv_memory_step_traffic(
+                        model=model,
+                        hardware=hardware,
+                        prompt_tokens_from_hbm=float(l_prompt),
+                        speculative_tokens_from_sram=float(stats.k),
+                        speculative_tokens_to_sram=1.0,
+                        committed_tokens_to_hbm=float(committed_tokens_outcome),
+                    )
+                    _mem_energy, mem_bonus = _memory_cost_from_traffic(hardware=hardware, traffic=bonus_traffic)
+                tail_latency = max(max_verify_bonus_step, mem_bonus)
+            else:
+                mem_commit = 0.0
+                if hardware.memory is not None:
+                    commit_traffic_outcome = _kv_memory_step_traffic(
+                        model=model,
+                        hardware=hardware,
+                        prompt_tokens_from_hbm=0.0,
+                        speculative_tokens_from_sram=0.0,
+                        speculative_tokens_to_sram=0.0,
+                        committed_tokens_to_hbm=float(committed_tokens_outcome),
+                    )
+                    _mem_energy, mem_commit = _memory_cost_from_traffic(hardware=hardware, traffic=commit_traffic_outcome)
+                tail_latency = max(verify_setup_period, mem_commit)
+
+            t_burst_pipe += prob * (draft_serial_latency + verify_wavefront_latency + tail_latency)
+
         latency_per_token_ns = t_burst_pipe / committed
 
     throughput_tokens_per_s = 0.0 if latency_per_token_ns == 0 else 1e9 / latency_per_token_ns
@@ -1628,9 +1800,12 @@ def estimate_sweep(
         area_breakdown_mm2=_area_breakdown_mm2(model, hardware),
         dpu_feature_mapping=dpu_feature_mapping,
         movement_accounting=MOVEMENT_ACCOUNTING_COVERAGE,
+        pipeline_policy=_pipeline_policy_metadata(hardware.soc.schedule),
         notes=[
             "Analytical calculator (closed-form activation counts, no event simulation).",
-            "No early-stop on mismatch; verifier suffix work is still charged.",
+            "Serialized phase accounting is step-indexed with context growth L_i = L_prompt + i.",
+            "Layer-pipelined mode keeps draft serialized and uses outcome-conditioned verify wavefront execution.",
+            "Layer-pipelined verify stops at first mismatch; full acceptance executes and commits one bonus token.",
             "Breakdown latencies are serialized sums; `soc.schedule` affects how latency/token is reported.",
             "Movement exclusions are explicit in `movement_accounting.excluded`.",
         ],

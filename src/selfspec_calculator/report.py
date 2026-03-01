@@ -435,4 +435,5 @@ class Report(BaseModel):
     area_breakdown_mm2: AreaBreakdownMm2
     dpu_feature_mapping: dict[str, str] | None = None
     movement_accounting: MovementAccountingCoverage | None = None
+    pipeline_policy: dict[str, Any] | None = None
     notes: list[str] = Field(default_factory=list)

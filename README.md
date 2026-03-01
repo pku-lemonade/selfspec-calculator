@@ -159,17 +159,20 @@ The JSON report includes:
 ## Modeling assumptions
 
 - This project is an analytical calculator (closed-form counting), not an event/instruction simulator.
-- No early-stop on mismatch (wasted verifier suffix work is still charged).
 - Serialized phase accounting is step-indexed:
   - draft and verify-drafted steps use `L_i = L_prompt + i` for `i = 0..K-1`,
   - verify-bonus uses `L_prompt + K`.
 - `soc.schedule` affects how `latency_ns_per_token` is reported:
   - `serialized`: end-to-end serialized time per committed token.
-  - `layer-pipelined`: steady-state token period bounded by the slowest layer-stage and shared resources (e.g., memory bandwidth/latency).
+  - `layer-pipelined`: draft remains serialized; verify uses outcome-conditioned wavefront execution.
+    - mismatch (`a < K`): execute verify steps `0..a`, stop immediately, and commit `a+1` tokens.
+    - full accept (`a = K`): execute `K` drafted verify steps plus one bonus step (`K+1` total committed).
+    - no post-mismatch verifier tail work is charged.
 - DPU feature coefficients support backward-compatible fallback:
   - missing `digital.features.*` entries are mapped from coarse digital coefficients.
 - When `memory` is configured:
-  - HBM KV reads are not mismatch-gated in v1.
+  - Serialized mode keeps fixed-phase KV reads (not mismatch-gated).
+  - Layer-pipelined mode mismatch-gates verify-stage KV reads via outcome-conditioned executed-step accounting.
   - HBM KV writes are commit-only (Policy B).
   - ownership rule: KV update compute is excluded from DPU features and owned by movement accounting (`kv_cache` stage + `sram/hbm/fabric` components).
   - non-KV intermediate movement is currently excluded and explicitly reported under `movement_accounting.excluded`.
