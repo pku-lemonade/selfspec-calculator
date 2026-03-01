@@ -411,6 +411,12 @@ class PhaseBreakdown(BaseModel):
     total: Breakdown
 
 
+class LeakageSummary(BaseModel):
+    total_power_mw: float = Field(0.0, ge=0.0)
+    energy_pj: float = Field(0.0, ge=0.0)
+    burst_latency_ns: float = Field(0.0, ge=0.0)
+
+
 class SweepPoint(BaseModel):
     l_prompt: int = Field(..., ge=0)
     speculative: Metrics
@@ -418,6 +424,7 @@ class SweepPoint(BaseModel):
     delta: BaselineDelta
     breakdown: PhaseBreakdown
     baseline_breakdown: PhaseBreakdown
+    leakage: LeakageSummary | None = None
 
 
 class Report(BaseModel):

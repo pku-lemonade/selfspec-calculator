@@ -215,6 +215,81 @@ def test_layer_pipelined_schedule_reduces_reported_latency() -> None:
     assert m1.latency_ns_per_token <= m0.latency_ns_per_token
 
 
+def test_zero_leakage_matches_dynamic_only_energy() -> None:
+    model = ModelConfig.model_validate(BASE_MODEL)
+    stats = SpeculationStats(k=3, histogram={0: 0.6, 3: 0.4})
+
+    hw_base = _base_knob_hardware(soc={"schedule": "layer-pipelined"})
+    hw_zero = _base_knob_hardware(
+        soc={"schedule": "layer-pipelined"},
+        leakage_power={
+            "arrays_mw": 0.0,
+            "attention_engine_mw": 0.0,
+            "sram_mw": 0.0,
+            "hbm_mw": 0.0,
+            "fabric_mw": 0.0,
+        },
+    )
+
+    m_base, _ = estimate_point(model=model, hardware=hw_base, stats=stats, l_prompt=64)
+    m_zero, _ = estimate_point(model=model, hardware=hw_zero, stats=stats, l_prompt=64)
+
+    assert m_zero.energy_pj_per_token == pytest.approx(m_base.energy_pj_per_token)
+    assert m_zero.latency_ns_per_token == pytest.approx(m_base.latency_ns_per_token)
+
+
+def test_positive_leakage_adds_expected_energy_delta() -> None:
+    model = ModelConfig.model_validate(BASE_MODEL)
+    stats = SpeculationStats(k=2, histogram={0: 1.0})
+    total_leakage_mw = 7.5
+
+    hw_base = _base_knob_hardware(soc={"schedule": "serialized"})
+    hw_leak = _base_knob_hardware(
+        soc={"schedule": "serialized"},
+        leakage_power={
+            "arrays_mw": 5.0,
+            "control_mw": 2.5,
+        },
+    )
+
+    m_base, _ = estimate_point(model=model, hardware=hw_base, stats=stats, l_prompt=64)
+    m_leak, _ = estimate_point(model=model, hardware=hw_leak, stats=stats, l_prompt=64)
+
+    expected_delta = total_leakage_mw * m_base.latency_ns_per_token
+    assert m_leak.latency_ns_per_token == pytest.approx(m_base.latency_ns_per_token)
+    assert m_leak.energy_pj_per_token - m_base.energy_pj_per_token == pytest.approx(expected_delta)
+
+
+def test_leakage_energy_uses_schedule_aware_burst_latency() -> None:
+    model = ModelConfig.model_validate(BASE_MODEL)
+    stats = SpeculationStats(k=3, histogram={0: 1.0})
+    total_leakage_mw = 4.0
+
+    hw_serial = _base_knob_hardware(soc={"schedule": "serialized"})
+    hw_serial_leak = _base_knob_hardware(
+        soc={"schedule": "serialized"},
+        leakage_power={"arrays_mw": total_leakage_mw},
+    )
+    hw_pipe = _base_knob_hardware(soc={"schedule": "layer-pipelined"})
+    hw_pipe_leak = _base_knob_hardware(
+        soc={"schedule": "layer-pipelined"},
+        leakage_power={"arrays_mw": total_leakage_mw},
+    )
+
+    m_serial, _ = estimate_point(model=model, hardware=hw_serial, stats=stats, l_prompt=64)
+    m_serial_leak, _ = estimate_point(model=model, hardware=hw_serial_leak, stats=stats, l_prompt=64)
+    m_pipe, _ = estimate_point(model=model, hardware=hw_pipe, stats=stats, l_prompt=64)
+    m_pipe_leak, _ = estimate_point(model=model, hardware=hw_pipe_leak, stats=stats, l_prompt=64)
+
+    delta_serial = m_serial_leak.energy_pj_per_token - m_serial.energy_pj_per_token
+    delta_pipe = m_pipe_leak.energy_pj_per_token - m_pipe.energy_pj_per_token
+
+    assert delta_serial == pytest.approx(total_leakage_mw * m_serial.latency_ns_per_token)
+    assert delta_pipe == pytest.approx(total_leakage_mw * m_pipe.latency_ns_per_token)
+    assert m_pipe.latency_ns_per_token <= m_serial.latency_ns_per_token
+    assert delta_pipe <= delta_serial
+
+
 def test_layer_pipelined_can_be_memory_bottlenecked_and_is_not_naive_divide_by_layers() -> None:
     model = ModelConfig.model_validate(
         {

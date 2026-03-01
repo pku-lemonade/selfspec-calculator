@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from selfspec_calculator.config import HardwareConfig, ModelConfig
 from selfspec_calculator.estimator import estimate_sweep
 from selfspec_calculator.stats import SpeculationStats
@@ -109,6 +111,50 @@ def test_report_exposes_layer_pipelined_verify_wavefront_policy_metadata() -> No
     assert policy["verify_stage"] == "wavefront"
     assert policy["mismatch_policy"] == "stop-at-first-mismatch"
     assert policy["bonus_in_verify_wavefront"] is True
+
+
+def test_report_includes_leakage_summary_and_leakage_power_inputs() -> None:
+    model = ModelConfig.model_validate(
+        {
+            "n_layers": 2,
+            "d_model": 64,
+            "n_heads": 8,
+            "activation_bits": 12,
+            "ffn_type": "mlp",
+            "ffn_expansion": 4.0,
+        }
+    )
+    hardware = HardwareConfig.model_validate(
+        {
+            "reuse_policy": "reuse",
+            "library": "puma_like_v1",
+            "analog": {
+                "xbar_size": 128,
+                "num_columns_per_adc": 16,
+                "dac_bits": 4,
+                "adc": {"draft_bits": 4, "residual_bits": 12},
+            },
+            "leakage_power": {
+                "arrays_mw": 2.0,
+                "control_mw": 1.5,
+                "sram_mw": 0.5,
+            },
+        }
+    )
+    stats = SpeculationStats(k=2, histogram={0: 0.5, 2: 0.5})
+
+    report = estimate_sweep(model=model, hardware=hardware, stats=stats, prompt_lengths=[64]).model_dump(mode="json")
+    point = report["points"][0]
+    leakage = point["leakage"]
+    assert leakage is not None
+    assert leakage["total_power_mw"] == pytest.approx(4.0)
+    assert leakage["energy_pj"] == pytest.approx(leakage["total_power_mw"] * leakage["burst_latency_ns"])
+
+    assert "hardware_knobs" in report
+    assert "leakage_power" in report["hardware_knobs"]
+    assert report["hardware_knobs"]["leakage_power"]["arrays_mw"] == pytest.approx(2.0)
+    assert report["hardware_knobs"]["leakage_power"]["control_mw"] == pytest.approx(1.5)
+    assert report["hardware_knobs"]["leakage_power"]["sram_mw"] == pytest.approx(0.5)
 
 
 def test_area_breakdown_reports_memory_and_periphery_area_and_excludes_hbm_from_on_chip_total() -> None:

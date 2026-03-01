@@ -149,6 +149,7 @@ The JSON report includes:
 - compute-vs-movement channel totals (`channels`) for each phase,
 - DPU compatibility provenance (`dpu_feature_mapping`) indicating `explicit:*` vs `mapped:*` feature coefficients,
 - movement coverage metadata (`movement_accounting`) with modeled/proxy/excluded movement items and ownership rules,
+- leakage summary per sweep point (`leakage`) with total leakage power (mW), leakage energy (pJ), and effective burst latency (ns),
 - resolved library entries (for knob-based runs),
 - analog activation counts (`dac_conversions`, `adc_*_conversions`, etc.) for knob-based runs,
 - baseline/delta and break-even fields compatible with previous outputs.
@@ -180,3 +181,7 @@ The JSON report includes:
 - Full-read dual-ADC latency uses parallel timing:
   - energy sums ADC-Draft + ADC-Residual,
   - latency uses `max(adc_draft_scan, adc_residual_scan)`.
+- Leakage model (v1):
+  - component leakage coefficients are always-on over burst wall-clock time,
+  - leakage energy is `E_leak_burst[pJ] = P_leak_total[mW] * T_burst_effective[ns]`,
+  - `T_burst_effective` is schedule-aware (serialized burst time vs layer-pipelined burst time).

@@ -197,6 +197,28 @@ class ControlOverheadKnobs(BaseModel):
     latency_ns_per_burst: float = Field(0.0, ge=0.0)
 
 
+class ComponentLeakagePowerKnobs(BaseModel):
+    arrays_mw: float = Field(0.0, ge=0.0)
+    dac_mw: float = Field(0.0, ge=0.0)
+    adc_draft_mw: float = Field(0.0, ge=0.0)
+    adc_residual_mw: float = Field(0.0, ge=0.0)
+    tia_mw: float = Field(0.0, ge=0.0)
+    snh_mw: float = Field(0.0, ge=0.0)
+    mux_mw: float = Field(0.0, ge=0.0)
+    io_buffers_mw: float = Field(0.0, ge=0.0)
+    subarray_switches_mw: float = Field(0.0, ge=0.0)
+    write_drivers_mw: float = Field(0.0, ge=0.0)
+    attention_engine_mw: float = Field(0.0, ge=0.0)
+    softmax_unit_mw: float = Field(0.0, ge=0.0)
+    elementwise_unit_mw: float = Field(0.0, ge=0.0)
+    kv_cache_mw: float = Field(0.0, ge=0.0)
+    buffers_add_mw: float = Field(0.0, ge=0.0)
+    control_mw: float = Field(0.0, ge=0.0)
+    sram_mw: float = Field(0.0, ge=0.0)
+    hbm_mw: float = Field(0.0, ge=0.0)
+    fabric_mw: float = Field(0.0, ge=0.0)
+
+
 class SocKnobs(BaseModel):
     schedule: ScheduleMode = ScheduleMode.serialized
     attention_cim_units: int = Field(1, ge=1)
@@ -339,6 +361,7 @@ class HardwareConfig(BaseModel):
     library: str | None = None
     library_file: str | None = None
     soc: SocKnobs = Field(default_factory=SocKnobs)
+    leakage_power: ComponentLeakagePowerKnobs = Field(default_factory=ComponentLeakagePowerKnobs)
     memory: MemoryKnobs | None = None
     analog: AnalogKnobs | None = None
     costs: HardwareCosts | None = None

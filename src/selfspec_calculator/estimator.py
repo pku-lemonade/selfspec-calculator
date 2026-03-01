@@ -24,6 +24,7 @@ from .report import (
     CostChannelBreakdown,
     ComponentBreakdown,
     DpuFeatureBreakdown,
+    LeakageSummary,
     MemoryTraffic,
     Metrics,
     MovementAccountingCoverage,
@@ -120,6 +121,15 @@ def _verify_setup_breakdown(model: ModelConfig, hardware: HardwareConfig) -> Bre
     components = ComponentBreakdown().add_energy_latency("control", energy, latency)
     channels = CostChannelBreakdown().add_energy_latency("compute", energy, latency)
     return Breakdown.from_stage_breakdown(stages, components=components, channels=channels)
+
+
+def _total_leakage_power_mw(hardware: HardwareConfig) -> float:
+    leakage = hardware.leakage_power
+    return float(sum(getattr(leakage, field) for field in type(leakage).model_fields))
+
+
+def _leakage_energy_pj(*, leakage_power_mw: float, burst_latency_ns: float) -> float:
+    return float(leakage_power_mw) * float(burst_latency_ns)
 
 
 def _kv_bytes_per_token_per_layer(*, d_model: int, n_heads: int, fmt) -> int:  # noqa: ANN001
@@ -1588,12 +1598,8 @@ def estimate_point(
         )
 
     total_phase = _sum_breakdowns(_sum_breakdowns(draft_phase, verify_drafted_phase), verify_bonus_phase)
-
-    e_burst = total_phase.energy_pj
-    t_burst = total_phase.latency_ns
-
-    energy_per_token_pj = e_burst / committed
-    latency_per_token_ns = t_burst / committed
+    dynamic_burst_energy_pj = total_phase.energy_pj
+    effective_burst_latency_ns = total_phase.latency_ns
 
     if hardware.soc.schedule == ScheduleMode.layer_pipelined:
         if hardware.mode == HardwareMode.legacy:
@@ -1672,7 +1678,17 @@ def estimate_point(
 
             t_burst_pipe += prob * (draft_serial_latency + verify_wavefront_latency + tail_latency)
 
-        latency_per_token_ns = t_burst_pipe / committed
+        effective_burst_latency_ns = t_burst_pipe
+
+    leakage_power_mw = _total_leakage_power_mw(hardware)
+    leakage_energy_pj = _leakage_energy_pj(
+        leakage_power_mw=leakage_power_mw,
+        burst_latency_ns=effective_burst_latency_ns,
+    )
+
+    total_burst_energy_pj = dynamic_burst_energy_pj + leakage_energy_pj
+    energy_per_token_pj = total_burst_energy_pj / committed
+    latency_per_token_ns = effective_burst_latency_ns / committed
 
     throughput_tokens_per_s = 0.0 if latency_per_token_ns == 0 else 1e9 / latency_per_token_ns
     tokens_per_joule = 0.0 if energy_per_token_pj == 0 else 1e12 / energy_per_token_pj
@@ -1703,11 +1719,19 @@ def estimate_sweep(
     if paths is not None:
         paths_obj = InputPaths(**paths)
 
+    committed_tokens = expected_committed_tokens_per_burst(stats)
+    leakage_power_mw = _total_leakage_power_mw(hardware)
+
     points: list[SweepPoint] = []
     for l_prompt in prompt_lengths:
         speculative_metrics, speculative_breakdown = estimate_point(model, hardware, stats, l_prompt)
         baseline_metrics, baseline_breakdown = estimate_point(model, hardware, _baseline_stats(), l_prompt)
         delta = BaselineDelta.from_metrics(speculative_metrics, baseline_metrics)
+        burst_latency_ns = speculative_metrics.latency_ns_per_token * committed_tokens
+        leakage_energy_pj = _leakage_energy_pj(
+            leakage_power_mw=leakage_power_mw,
+            burst_latency_ns=burst_latency_ns,
+        )
         points.append(
             SweepPoint(
                 l_prompt=l_prompt,
@@ -1716,6 +1740,11 @@ def estimate_sweep(
                 delta=delta,
                 breakdown=speculative_breakdown,
                 baseline_breakdown=baseline_breakdown,
+                leakage=LeakageSummary(
+                    total_power_mw=leakage_power_mw,
+                    energy_pj=leakage_energy_pj,
+                    burst_latency_ns=burst_latency_ns,
+                ),
             )
         )
 
@@ -1758,6 +1787,12 @@ def estimate_sweep(
 
     if hardware.memory is not None:
         hardware_knobs["memory"] = hardware.memory.model_dump(mode="json")
+
+    if (
+        any(getattr(hardware.leakage_power, field) != 0.0 for field in type(hardware.leakage_power).model_fields)
+        or bool(hardware.leakage_power.model_fields_set)
+    ):
+        hardware_knobs["leakage_power"] = hardware.leakage_power.model_dump(mode="json")
 
     if (
         hardware.soc.schedule != ScheduleMode.serialized
@@ -1806,6 +1841,8 @@ def estimate_sweep(
             "Serialized phase accounting is step-indexed with context growth L_i = L_prompt + i.",
             "Layer-pipelined mode keeps draft serialized and uses outcome-conditioned verify wavefront execution.",
             "Layer-pipelined verify stops at first mismatch; full acceptance executes and commits one bonus token.",
+            "Leakage energy uses E_leak_burst[pJ] = P_leak_total[mW] * T_burst_effective[ns].",
+            "Leakage timing is schedule-aware: serialized uses serialized burst time, layer-pipelined uses pipelined burst time.",
             "Breakdown latencies are serialized sums; `soc.schedule` affects how latency/token is reported.",
             "Movement exclusions are explicit in `movement_accounting.excluded`.",
         ],
