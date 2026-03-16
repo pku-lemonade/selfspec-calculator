@@ -1,5 +1,5 @@
 reuse_policy: reuse
-library: science_soc_v1
+library: science_adi9405_v1_neurosim
 
 soc:
   # In layer-pipelined mode, latency/token is reported as a steady-state token period

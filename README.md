@@ -70,7 +70,7 @@ soc:
 memory:
   # Enables bytes-based KV-cache modeling (SRAM buffer + off-chip HBM + fabric).
   # PPA coefficients (energy/byte, bandwidth, latency, and optional area) can be provided explicitly,
-  # but are typically resolved from the selected `library` (e.g., `science_soc_v1`).
+  # but are typically resolved from the selected `library` (e.g., `science_adi9405_v1_neurosim`).
   # Any field provided here overrides the library (including explicit `0.0`).
   sram: {}
   hbm: {}
@@ -109,6 +109,7 @@ Examples:
 - `examples/hardware_soc_memory.yaml` (SRAM + HBM + fabric KV-cache model)
 - `examples/hardware_analog_periphery.yaml` (non-zero analog periphery + buffers/control)
 - `examples/hardware_soc_area.yaml` (component area breakdown; off-chip HBM area reported separately)
+- `examples/hardware_science_adi9405_v1_neurosim.yaml` (most complete packaged Science / ADI9405 reference profile)
 - `examples/hardware_custom_library.yaml` (custom JSON library source via `library_file`, including explicit `digital.features.*`)
 
 Validation rules:
@@ -165,10 +166,10 @@ The JSON report includes:
   - verify-bonus uses `L_prompt + K`.
 - `soc.schedule` affects how `latency_ns_per_token` is reported:
   - `serialized`: end-to-end serialized time per committed token.
-  - `layer-pipelined`: draft remains serialized; verify uses outcome-conditioned wavefront execution.
-    - mismatch (`a < K`): execute verify steps `0..a`, stop immediately, and commit `a+1` tokens.
-    - full accept (`a = K`): execute `K` drafted verify steps plus one bonus step (`K+1` total committed).
-    - no post-mismatch verifier tail work is charged.
+  - `layer-pipelined`: draft remains serialized; verify executes a fixed pipelined burst.
+    - `K=0`: reported latency/token falls back to stop-and-go full-precision token latency.
+    - `K>0`: verify always executes `K` drafted-token verify steps plus one bonus step (`K+1` total verify steps).
+    - acceptance affects committed tokens and commit-side writes, but does not shorten verify-burst execution.
 - DPU feature coefficients support backward-compatible fallback:
   - missing `digital.features.*` entries are mapped from coarse digital coefficients.
 - When `memory` is configured:
@@ -181,6 +182,15 @@ The JSON report includes:
 - Full-read dual-ADC latency uses parallel timing:
   - energy sums ADC-Draft + ADC-Residual,
   - latency uses `max(adc_draft_scan, adc_residual_scan)`.
+- `buffers_add` on analog output streams uses streamed lane-parallel timing:
+  - latency scales with ADC scan steps (`outputs / adc_lanes`), not raw output count,
+  - only incremental latency beyond the already-modeled analog output stream is charged.
+- Analog readout periphery on the ADC output stream uses overlap-aware timing:
+  - `TIA`, `SNH`, `MUX`, and output-side IO contribute energy separately,
+  - wall-clock readout latency uses the bottleneck streamed output path rather than summing each block as a full scan pass.
+- Memory hierarchy latency uses transfer-path bottlenecks:
+  - energy remains additive across `SRAM`, `HBM`, and `fabric`,
+  - wall-clock latency does not unconditionally sum every hierarchy layer as separate end-to-end phases.
 - Leakage model (v1):
   - component leakage coefficients are always-on over burst wall-clock time,
   - leakage energy is `E_leak_burst[pJ] = P_leak_total[nW] * T_burst_effective[ns] * 1e-6`,

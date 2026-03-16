@@ -1,5 +1,5 @@
 reuse_policy: reuse
-library: science_soc_v1
+library: science_adi9405_v1_neurosim
 
 memory:
   # Bytes-based KV-cache model (Policy B): HBM writes are commit-only.

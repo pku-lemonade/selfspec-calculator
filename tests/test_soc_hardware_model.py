@@ -1,7 +1,10 @@
+from math import ceil
+
 import pytest
 
 from selfspec_calculator.config import HardwareConfig, ModelConfig
-from selfspec_calculator.estimator import estimate_point, estimate_sweep
+from selfspec_calculator.estimator import _memory_cost_from_traffic, estimate_point, estimate_sweep
+from selfspec_calculator.report import MemoryTraffic
 from selfspec_calculator.stats import SpeculationStats
 
 
@@ -202,6 +205,131 @@ def test_nonzero_periphery_buffers_control_increase_totals() -> None:
     assert b1.total.energy_pj > b0.total.energy_pj
 
 
+def test_draft_buffers_add_latency_uses_stream_overlap() -> None:
+    model = ModelConfig.model_validate(BASE_MODEL)
+    stats = SpeculationStats(k=1, histogram={0: 1.0})
+    hardware = _base_knob_hardware(
+        soc={"buffers_add": {"energy_pj_per_op": 0.01, "latency_ns_per_op": 1.0}},
+    )
+
+    _, breakdown = estimate_point(model=model, hardware=hardware, stats=stats, l_prompt=64)
+
+    specs = hardware.resolve_knob_specs()
+    num_slices = ceil(model.activation_bits / hardware.analog.dac_bits)
+    tile_counts = {"qkv": 2, "wo": 1, "ffn": 4}
+    total_stream_steps = sum(tile_count * num_slices * hardware.analog.num_columns_per_adc for tile_count in tile_counts.values())
+    expected_per_layer = total_stream_steps * max(
+        0.0,
+        hardware.soc.buffers_add.latency_ns_per_op - specs.adc_draft.latency_ns_per_conversion,
+    )
+    expected = model.n_layers * expected_per_layer
+
+    assert breakdown.draft.components is not None
+    assert breakdown.draft.components.buffers_add_latency_ns == pytest.approx(expected)
+
+
+def test_verify_reuse_buffers_add_exceeds_draft_when_final_add_is_needed() -> None:
+    model = ModelConfig.model_validate(BASE_MODEL)
+    stats = SpeculationStats(k=1, histogram={0: 1.0})
+    hardware = _base_knob_hardware(
+        soc={"buffers_add": {"energy_pj_per_op": 0.01, "latency_ns_per_op": 1.0}},
+    )
+
+    _, breakdown = estimate_point(model=model, hardware=hardware, stats=stats, l_prompt=64)
+
+    specs = hardware.resolve_knob_specs()
+    num_slices = ceil(model.activation_bits / hardware.analog.dac_bits)
+    tile_counts = {"qkv": 2, "wo": 1, "ffn": 4}
+    total_stream_steps = sum(tile_count * num_slices * hardware.analog.num_columns_per_adc for tile_count in tile_counts.values())
+    expected_per_layer = total_stream_steps * max(
+        0.0,
+        2.0 * hardware.soc.buffers_add.latency_ns_per_op - specs.adc_residual.latency_ns_per_conversion,
+    )
+    expected = model.n_layers * expected_per_layer
+
+    assert breakdown.draft.components is not None
+    assert breakdown.verify_drafted.components is not None
+    assert breakdown.verify_drafted.components.buffers_add_latency_ns == pytest.approx(expected)
+    assert breakdown.verify_drafted.components.buffers_add_latency_ns > breakdown.draft.components.buffers_add_latency_ns
+
+
+def test_output_stream_periphery_latency_does_not_stack_when_adc_is_slower() -> None:
+    model = ModelConfig.model_validate(BASE_MODEL)
+    stats = SpeculationStats(k=0, histogram={0: 1.0})
+
+    base_hw = _base_knob_hardware()
+    periph_hw = _base_knob_hardware(
+        analog={
+            "xbar_size": 128,
+            "num_columns_per_adc": 16,
+            "dac_bits": 4,
+            "adc": {"draft_bits": 4, "residual_bits": 12},
+            "periphery": {
+                "tia": {"energy_pj_per_op": 0.001, "latency_ns_per_op": 0.02},
+                "snh": {"energy_pj_per_op": 0.001, "latency_ns_per_op": 0.01},
+                "mux": {"energy_pj_per_op": 0.001, "latency_ns_per_op": 0.01},
+            },
+        },
+    )
+
+    _, base_breakdown = estimate_point(model=model, hardware=base_hw, stats=stats, l_prompt=64)
+    _, periph_breakdown = estimate_point(model=model, hardware=periph_hw, stats=stats, l_prompt=64)
+
+    assert periph_breakdown.verify_bonus.components is not None
+    assert periph_breakdown.verify_bonus.components.tia_latency_ns > 0.0
+    assert periph_breakdown.verify_bonus.components.snh_latency_ns > 0.0
+    assert periph_breakdown.verify_bonus.components.mux_latency_ns > 0.0
+    assert periph_breakdown.verify_bonus.latency_ns == pytest.approx(base_breakdown.verify_bonus.latency_ns)
+
+
+def test_memory_cost_uses_transfer_path_bottleneck_not_serial_sum() -> None:
+    hardware = _base_knob_hardware(
+        memory={
+            "sram": {
+                "read_energy_pj_per_byte": 0.1,
+                "write_energy_pj_per_byte": 0.2,
+                "read_bandwidth_GBps": 1000.0,
+                "write_bandwidth_GBps": 1000.0,
+                "read_latency_ns": 1.0,
+                "write_latency_ns": 2.0,
+            },
+            "hbm": {
+                "read_energy_pj_per_byte": 1.0,
+                "write_energy_pj_per_byte": 2.0,
+                "read_bandwidth_GBps": 1000.0,
+                "write_bandwidth_GBps": 1000.0,
+                "read_latency_ns": 10.0,
+                "write_latency_ns": 20.0,
+            },
+            "fabric": {
+                "read_energy_pj_per_byte": 0.01,
+                "write_energy_pj_per_byte": 0.02,
+                "read_bandwidth_GBps": 1000.0,
+                "write_bandwidth_GBps": 1000.0,
+                "read_latency_ns": 3.0,
+                "write_latency_ns": 4.0,
+            },
+        }
+    )
+    traffic = MemoryTraffic(
+        hbm_read_bytes=1000.0,
+        hbm_write_bytes=500.0,
+        fabric_read_bytes=1000.0,
+        fabric_write_bytes=500.0,
+    )
+
+    energy, latency = _memory_cost_from_traffic(hardware=hardware, traffic=traffic)
+
+    expected_energy = (1000.0 * 1.0) + (500.0 * 2.0) + (1000.0 * 0.01) + (500.0 * 0.02)
+    expected_latency = max(1000.0 / 1000.0 + 10.0, 1000.0 / 1000.0 + 3.0) + max(
+        500.0 / 1000.0 + 20.0,
+        500.0 / 1000.0 + 4.0,
+    )
+
+    assert energy == pytest.approx(expected_energy)
+    assert latency == pytest.approx(expected_latency)
+
+
 def test_layer_pipelined_schedule_reduces_reported_latency() -> None:
     model = ModelConfig.model_validate(BASE_MODEL)
     hardware_serial = _base_knob_hardware(soc={"schedule": "serialized"})
@@ -330,93 +458,41 @@ def test_layer_pipelined_can_be_memory_bottlenecked_and_is_not_naive_divide_by_l
     m1, _ = estimate_point(model=model, hardware=hw_pipe, stats=stats, l_prompt=64)
 
     assert m1.energy_pj_per_token <= m0.energy_pj_per_token
-    assert m1.latency_ns_per_token <= m0.latency_ns_per_token
     assert m1.latency_ns_per_token > (m0.latency_ns_per_token / model.n_layers) * 2.0
+    assert m1.latency_ns_per_token > 0.0
 
 
-def test_layer_pipelined_early_mismatch_stops_verify_and_skips_bonus_compute() -> None:
+def test_layer_pipelined_k0_matches_stop_and_go_full_precision_baseline() -> None:
     model = ModelConfig.model_validate(BASE_MODEL)
-    stats = SpeculationStats(k=5, histogram={0: 1.0})
+    stats = SpeculationStats(k=0, histogram={0: 1.0})
 
-    hw_pipe = _base_knob_hardware(
-        soc={
-            "schedule": "layer-pipelined",
-            "verify_setup": {"energy_pj_per_burst": 10.0, "latency_ns_per_burst": 100.0},
-        }
-    )
-    hw_serial = _base_knob_hardware(
-        soc={
-            "schedule": "serialized",
-            "verify_setup": {"energy_pj_per_burst": 10.0, "latency_ns_per_burst": 100.0},
-        }
-    )
+    hw_pipe = _base_knob_hardware(soc={"schedule": "layer-pipelined"})
+    hw_serial = _base_knob_hardware(soc={"schedule": "serialized"})
 
-    _, b_pipe = estimate_point(model=model, hardware=hw_pipe, stats=stats, l_prompt=64)
-    _, b_ref_one_step = estimate_point(
-        model=model,
-        hardware=hw_serial,
-        stats=SpeculationStats(k=1, histogram={0: 1.0}),
-        l_prompt=64,
-    )
+    m_pipe, b_pipe = estimate_point(model=model, hardware=hw_pipe, stats=stats, l_prompt=64)
+    m_serial, b_serial = estimate_point(model=model, hardware=hw_serial, stats=stats, l_prompt=64)
 
-    assert b_pipe.verify_drafted.energy_pj == pytest.approx(b_ref_one_step.verify_drafted.energy_pj)
-    assert b_pipe.verify_drafted.latency_ns == pytest.approx(b_ref_one_step.verify_drafted.latency_ns)
-
-    assert b_pipe.verify_bonus.stages.qkv_energy_pj == pytest.approx(0.0)
-    assert b_pipe.verify_bonus.stages.wo_energy_pj == pytest.approx(0.0)
-    assert b_pipe.verify_bonus.stages.ffn_energy_pj == pytest.approx(0.0)
-    assert b_pipe.verify_bonus.stages.qk_energy_pj == pytest.approx(0.0)
-    assert b_pipe.verify_bonus.stages.pv_energy_pj == pytest.approx(0.0)
-    assert b_pipe.verify_bonus.stages.softmax_energy_pj == pytest.approx(0.0)
-    assert b_pipe.verify_bonus.stages.elementwise_energy_pj == pytest.approx(0.0)
-    assert b_pipe.verify_bonus.stages.control_latency_ns == pytest.approx(float(model.n_layers) * 100.0)
+    assert m_pipe.latency_ns_per_token == pytest.approx(m_serial.latency_ns_per_token)
+    assert m_pipe.energy_pj_per_token == pytest.approx(m_serial.energy_pj_per_token)
+    assert b_pipe.verify_bonus.energy_pj == pytest.approx(b_serial.verify_bonus.energy_pj)
+    assert b_pipe.verify_bonus.latency_ns == pytest.approx(b_serial.verify_bonus.latency_ns)
 
 
-def test_layer_pipelined_mid_mismatch_charges_executed_steps_and_commit_tokens() -> None:
+def test_layer_pipelined_verify_burst_latency_is_fixed_across_acceptance_outcomes() -> None:
     model = ModelConfig.model_validate(BASE_MODEL)
-    d_model = model.d_model
-    n_heads = model.n_heads
-    n_layers = model.n_layers
+    hw_pipe = _base_knob_hardware(soc={"schedule": "layer-pipelined"})
 
-    fmt = {"value_bytes_per_elem": 1, "scale_bytes": 2, "scales_per_token_per_head": 2}
-    bytes_per_token_per_layer = 2 * d_model * fmt["value_bytes_per_elem"] + n_heads * fmt["scales_per_token_per_head"] * fmt["scale_bytes"]
+    k = 5
+    m0, _ = estimate_point(model=model, hardware=hw_pipe, stats=SpeculationStats(k=k, histogram={0: 1.0}), l_prompt=64)
+    m5, _ = estimate_point(model=model, hardware=hw_pipe, stats=SpeculationStats(k=k, histogram={k: 1.0}), l_prompt=64)
 
-    hw_pipe = _base_knob_hardware(
-        soc={"schedule": "layer-pipelined"},
-        memory={
-            "sram": {"read_energy_pj_per_byte": 0.1, "write_energy_pj_per_byte": 0.2},
-            "hbm": {"read_energy_pj_per_byte": 1.0, "write_energy_pj_per_byte": 2.0},
-            "fabric": {"read_energy_pj_per_byte": 0.01, "write_energy_pj_per_byte": 0.01},
-            "kv_cache": {"hbm": fmt},
-        },
-    )
-    hw_serial = _base_knob_hardware(
-        soc={"schedule": "serialized"},
-        memory={
-            "sram": {"read_energy_pj_per_byte": 0.1, "write_energy_pj_per_byte": 0.2},
-            "hbm": {"read_energy_pj_per_byte": 1.0, "write_energy_pj_per_byte": 2.0},
-            "fabric": {"read_energy_pj_per_byte": 0.01, "write_energy_pj_per_byte": 0.01},
-            "kv_cache": {"hbm": fmt},
-        },
-    )
+    burst0 = m0.latency_ns_per_token * 1.0
+    burst5 = m5.latency_ns_per_token * float(k + 1)
 
-    _, b_pipe = estimate_point(model=model, hardware=hw_pipe, stats=SpeculationStats(k=5, histogram={2: 1.0}), l_prompt=64)
-    _, b_ref_three_steps = estimate_point(
-        model=model,
-        hardware=hw_serial,
-        stats=SpeculationStats(k=3, histogram={0: 1.0}),
-        l_prompt=64,
-    )
-
-    assert b_pipe.verify_drafted.energy_pj == pytest.approx(b_ref_three_steps.verify_drafted.energy_pj)
-    assert b_pipe.verify_bonus.stages.qkv_energy_pj == pytest.approx(0.0)
-
-    assert b_pipe.verify_bonus.memory_traffic is not None
-    expected_committed_write = 3.0 * n_layers * bytes_per_token_per_layer
-    assert b_pipe.verify_bonus.memory_traffic.hbm_write_bytes == pytest.approx(expected_committed_write)
+    assert burst0 == pytest.approx(burst5)
 
 
-def test_layer_pipelined_full_accept_executes_bonus_step_and_commits_k_plus_one_tokens() -> None:
+def test_layer_pipelined_verify_work_is_fixed_but_commit_writes_follow_acceptance() -> None:
     model = ModelConfig.model_validate(BASE_MODEL)
     d_model = model.d_model
     n_heads = model.n_heads
@@ -435,31 +511,20 @@ def test_layer_pipelined_full_accept_executes_bonus_step_and_commits_k_plus_one_
             "kv_cache": {"hbm": fmt},
         },
     )
-    hw_serial = _base_knob_hardware(
-        soc={"schedule": "serialized"},
-        memory={
-            "sram": {"read_energy_pj_per_byte": 0.1, "write_energy_pj_per_byte": 0.2},
-            "hbm": {"read_energy_pj_per_byte": 1.0, "write_energy_pj_per_byte": 2.0},
-            "fabric": {"read_energy_pj_per_byte": 0.01, "write_energy_pj_per_byte": 0.01},
-            "kv_cache": {"hbm": fmt},
-        },
-    )
+    _, b_mismatch = estimate_point(model=model, hardware=hw_pipe, stats=SpeculationStats(k=k, histogram={0: 1.0}), l_prompt=64)
+    _, b_accept = estimate_point(model=model, hardware=hw_pipe, stats=SpeculationStats(k=k, histogram={k: 1.0}), l_prompt=64)
 
-    _, b_pipe = estimate_point(model=model, hardware=hw_pipe, stats=SpeculationStats(k=k, histogram={k: 1.0}), l_prompt=64)
-    _, b_ref_k_steps = estimate_point(
-        model=model,
-        hardware=hw_serial,
-        stats=SpeculationStats(k=k, histogram={0: 1.0}),
-        l_prompt=64,
-    )
+    assert b_mismatch.verify_drafted.energy_pj == pytest.approx(b_accept.verify_drafted.energy_pj)
+    assert b_mismatch.verify_drafted.latency_ns == pytest.approx(b_accept.verify_drafted.latency_ns)
+    assert b_mismatch.verify_bonus.stages.qkv_energy_pj == pytest.approx(b_accept.verify_bonus.stages.qkv_energy_pj)
+    assert b_mismatch.verify_bonus.stages.qk_energy_pj == pytest.approx(b_accept.verify_bonus.stages.qk_energy_pj)
 
-    assert b_pipe.verify_drafted.energy_pj == pytest.approx(b_ref_k_steps.verify_drafted.energy_pj)
-    assert b_pipe.verify_bonus.stages.qkv_energy_pj > 0.0
-    assert b_pipe.verify_bonus.stages.qk_energy_pj > 0.0
-
-    assert b_pipe.verify_bonus.memory_traffic is not None
-    expected_committed_write = float(k + 1) * n_layers * bytes_per_token_per_layer
-    assert b_pipe.verify_bonus.memory_traffic.hbm_write_bytes == pytest.approx(expected_committed_write)
+    assert b_mismatch.verify_bonus.memory_traffic is not None
+    assert b_accept.verify_bonus.memory_traffic is not None
+    expected_mismatch_write = 1.0 * n_layers * bytes_per_token_per_layer
+    expected_accept_write = float(k + 1) * n_layers * bytes_per_token_per_layer
+    assert b_mismatch.verify_bonus.memory_traffic.hbm_write_bytes == pytest.approx(expected_mismatch_write)
+    assert b_accept.verify_bonus.memory_traffic.hbm_write_bytes == pytest.approx(expected_accept_write)
 
 
 def test_layer_pipelined_keeps_draft_phase_serialized() -> None:

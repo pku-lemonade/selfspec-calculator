@@ -1,7 +1,14 @@
 import json
 from pathlib import Path
 
+from selfspec_calculator.config import HardwareConfig
 from selfspec_calculator.cli import main
+
+
+def test_science_memory_example_uses_detailed_library() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    hardware = HardwareConfig.from_yaml(repo_root / "examples" / "hardware_soc_memory.yaml")
+    assert hardware.selected_library == "science_adi9405_v1_neurosim"
 
 
 def test_cli_runs_on_soc_memory_example(capsys) -> None:
@@ -9,7 +16,7 @@ def test_cli_runs_on_soc_memory_example(capsys) -> None:
     rc = main(
         [
             "--model",
-            str(repo_root / "examples" / "model.yaml"),
+            str(repo_root / "examples" / "model_qwen3_0p6b.yaml"),
             "--hardware",
             str(repo_root / "examples" / "hardware_soc_memory.yaml"),
             "--stats",
@@ -21,6 +28,7 @@ def test_cli_runs_on_soc_memory_example(capsys) -> None:
     assert rc == 0
 
     payload = json.loads(capsys.readouterr().out)
+    assert payload["resolved_library"]["name"] == "science_adi9405_v1_neurosim"
     point = payload["points"][0]
     total = point["breakdown"]["total"]
     assert total["memory_traffic"] is not None

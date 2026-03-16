@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from math import ceil
 from typing import Any
@@ -85,8 +86,8 @@ def _pipeline_policy_metadata(schedule: ScheduleMode) -> dict[str, Any]:
             "schedule": schedule.value,
             "draft_stage": "serialized",
             "verify_stage": "wavefront",
-            "mismatch_policy": "stop-at-first-mismatch",
-            "full_accept_policy": "execute-bonus-and-commit",
+            "mismatch_policy": "no-early-stop-execute-full-burst",
+            "full_accept_policy": "bonus-always-executed-commit-only-on-full-accept",
             "bonus_in_verify_wavefront": True,
         }
     return {
@@ -142,18 +143,83 @@ def _kv_bytes_per_token_per_layer(*, d_model: int, n_heads: int, fmt) -> int:  #
 def _mem_energy_latency(*, tech, read_bytes: float, write_bytes: float) -> tuple[float, float]:  # noqa: ANN001
     energy = read_bytes * tech.read_energy_pj_per_byte + write_bytes * tech.write_energy_pj_per_byte
 
-    latency = 0.0
+    read_latency, write_latency = _mem_service_latency(tech=tech, read_bytes=read_bytes, write_bytes=write_bytes)
+    return energy, read_latency + write_latency
+
+
+def _mem_service_latency(*, tech, read_bytes: float, write_bytes: float) -> tuple[float, float]:  # noqa: ANN001
+    read_latency = 0.0
+    write_latency = 0.0
+
     if read_bytes > 0:
         if tech.read_bandwidth_GBps > 0:
-            latency += read_bytes / tech.read_bandwidth_GBps
-        latency += tech.read_latency_ns
+            read_latency += read_bytes / tech.read_bandwidth_GBps
+        read_latency += tech.read_latency_ns
     if write_bytes > 0:
         if tech.write_bandwidth_GBps > 0:
-            latency += write_bytes / tech.write_bandwidth_GBps
-        latency += tech.write_latency_ns
+            write_latency += write_bytes / tech.write_bandwidth_GBps
+        write_latency += tech.write_latency_ns
 
-    return energy, latency
+    return read_latency, write_latency
 
+
+def _memory_cost_from_traffic(*, hardware: HardwareConfig, traffic: MemoryTraffic) -> tuple[float, float]:
+    if hardware.memory is None:
+        return (0.0, 0.0)
+
+    sram_e, _sram_total_t = _mem_energy_latency(
+        tech=hardware.memory.sram, read_bytes=traffic.sram_read_bytes, write_bytes=traffic.sram_write_bytes
+    )
+    hbm_e, _hbm_total_t = _mem_energy_latency(
+        tech=hardware.memory.hbm, read_bytes=traffic.hbm_read_bytes, write_bytes=traffic.hbm_write_bytes
+    )
+    fabric_e, _fabric_total_t = _mem_energy_latency(
+        tech=hardware.memory.fabric,
+        read_bytes=traffic.fabric_read_bytes,
+        write_bytes=traffic.fabric_write_bytes,
+    )
+
+    sram_read_t, sram_write_t = _mem_service_latency(
+        tech=hardware.memory.sram, read_bytes=traffic.sram_read_bytes, write_bytes=traffic.sram_write_bytes
+    )
+    hbm_read_t, hbm_write_t = _mem_service_latency(
+        tech=hardware.memory.hbm, read_bytes=traffic.hbm_read_bytes, write_bytes=traffic.hbm_write_bytes
+    )
+    fabric_read_t, fabric_write_t = _mem_service_latency(
+        tech=hardware.memory.fabric,
+        read_bytes=traffic.fabric_read_bytes,
+        write_bytes=traffic.fabric_write_bytes,
+    )
+
+    read_latency = max(sram_read_t, hbm_read_t, fabric_read_t)
+    write_latency = max(sram_write_t, hbm_write_t, fabric_write_t)
+    return (sram_e + hbm_e + fabric_e, read_latency + write_latency)
+
+
+def _legacy_buffers_add_overlap_latency(
+    *,
+    analog_latency_ns: float,
+    outputs: float,
+    buf_knobs,  # noqa: ANN001
+    op_multiplier: float = 1.0,
+) -> tuple[float, float]:
+    if outputs <= 0.0 or op_multiplier <= 0.0:
+        return (0.0, 0.0)
+
+    energy = outputs * op_multiplier * buf_knobs.energy_pj_per_op
+    raw_latency = outputs * op_multiplier * buf_knobs.latency_ns_per_op
+    return (energy, max(0.0, raw_latency - analog_latency_ns))
+
+
+def _knob_output_stream_latency_ns(
+    *,
+    adc_latency: float,
+    tia_latency: float,
+    snh_latency: float,
+    mux_latency: float,
+    io_latency: float,
+) -> float:
+    return max(adc_latency, tia_latency, snh_latency, mux_latency, io_latency)
 
 def _kv_memory_traffic_by_phase(
     *,
@@ -222,26 +288,6 @@ def _kv_memory_step_traffic(
     traffic.fabric_read_bytes = traffic.sram_read_bytes + traffic.hbm_read_bytes
     traffic.fabric_write_bytes = traffic.sram_write_bytes + traffic.hbm_write_bytes
     return traffic
-
-
-def _memory_cost_from_traffic(*, hardware: HardwareConfig, traffic: MemoryTraffic) -> tuple[float, float]:
-    if hardware.memory is None:
-        return (0.0, 0.0)
-
-    sram_e, sram_t = _mem_energy_latency(
-        tech=hardware.memory.sram, read_bytes=traffic.sram_read_bytes, write_bytes=traffic.sram_write_bytes
-    )
-    hbm_e, hbm_t = _mem_energy_latency(
-        tech=hardware.memory.hbm, read_bytes=traffic.hbm_read_bytes, write_bytes=traffic.hbm_write_bytes
-    )
-    fabric_e, fabric_t = _mem_energy_latency(
-        tech=hardware.memory.fabric,
-        read_bytes=traffic.fabric_read_bytes,
-        write_bytes=traffic.fabric_write_bytes,
-    )
-    return (sram_e + hbm_e + fabric_e, sram_t + hbm_t + fabric_t)
-
-
 def _add_memory_traffic_costs(
     *,
     breakdown: Breakdown,
@@ -662,18 +708,27 @@ def _token_step_costs_legacy(model: ModelConfig, hardware: HardwareConfig, l_pro
 
             outputs = float(analog_outputs[block])
             if hardware.reuse_policy == ReusePolicy.reuse:
-                energy = outputs * buf_knobs.energy_pj_per_op
-                latency = outputs * buf_knobs.latency_ns_per_op
+                energy, latency = _legacy_buffers_add_overlap_latency(
+                    analog_latency_ns=draft_latency,
+                    outputs=outputs,
+                    buf_knobs=buf_knobs,
+                )
                 draft.add_stage("buffers_add", energy, latency)
                 draft.add_component("buffers_add", energy, latency)
             if precision == PrecisionMode.full:
-                energy = outputs * buf_knobs.energy_pj_per_op
-                latency = outputs * buf_knobs.latency_ns_per_op
+                energy, latency = _legacy_buffers_add_overlap_latency(
+                    analog_latency_ns=draft_latency,
+                    outputs=outputs,
+                    buf_knobs=buf_knobs,
+                )
                 draft.add_stage("buffers_add", energy, latency)
                 draft.add_component("buffers_add", energy, latency)
 
-            bonus_energy = outputs * buf_knobs.energy_pj_per_op
-            bonus_latency = outputs * buf_knobs.latency_ns_per_op
+            bonus_energy, bonus_latency = _legacy_buffers_add_overlap_latency(
+                analog_latency_ns=full_latency,
+                outputs=outputs,
+                buf_knobs=buf_knobs,
+            )
             verify_full.add_stage("buffers_add", bonus_energy, bonus_latency)
             verify_full.add_component("buffers_add", bonus_energy, bonus_latency)
 
@@ -742,19 +797,29 @@ def _verify_drafted_token_additional_stage_legacy(
 
             outputs = float(analog_outputs[block])
             if hardware.reuse_policy == ReusePolicy.reread:
-                energy = outputs * buf_knobs.energy_pj_per_op
-                latency = outputs * buf_knobs.latency_ns_per_op
+                energy, latency = _legacy_buffers_add_overlap_latency(
+                    analog_latency_ns=analog_latency,
+                    outputs=outputs,
+                    buf_knobs=buf_knobs,
+                )
                 additional.add_stage("buffers_add", energy, latency)
                 additional.add_component("buffers_add", energy, latency)
             else:
                 if executed_precision == PrecisionMode.full:
-                    energy = outputs * buf_knobs.energy_pj_per_op
-                    latency = outputs * buf_knobs.latency_ns_per_op
+                    energy, latency = _legacy_buffers_add_overlap_latency(
+                        analog_latency_ns=0.0,
+                        outputs=outputs,
+                        buf_knobs=buf_knobs,
+                    )
                     additional.add_stage("buffers_add", energy, latency)
                     additional.add_component("buffers_add", energy, latency)
                 else:
-                    energy = 2.0 * outputs * buf_knobs.energy_pj_per_op
-                    latency = 2.0 * outputs * buf_knobs.latency_ns_per_op
+                    energy, latency = _legacy_buffers_add_overlap_latency(
+                        analog_latency_ns=analog_latency,
+                        outputs=outputs,
+                        buf_knobs=buf_knobs,
+                        op_multiplier=2.0,
+                    )
                     additional.add_stage("buffers_add", energy, latency)
                     additional.add_component("buffers_add", energy, latency)
 
@@ -877,6 +942,35 @@ class _TokenAccumulator:
         )
 
 
+@dataclass(frozen=True)
+class _AnalogStageStreamInfo:
+    outputs: float
+    stream_steps: float
+    output_stream_latency_ns: float
+
+
+def _add_streamed_buffers_add(
+    *,
+    acc: _TokenAccumulator,
+    buf_knobs,  # noqa: ANN001
+    outputs: float,
+    stream_steps: float,
+    op_multiplier: float = 1.0,
+    overlap_latency_ns: float | None = None,
+) -> None:
+    if outputs <= 0.0 or op_multiplier <= 0.0:
+        return
+
+    raw_energy = outputs * op_multiplier * buf_knobs.energy_pj_per_op
+    raw_latency = stream_steps * op_multiplier * buf_knobs.latency_ns_per_op
+    charged_latency = raw_latency
+    if overlap_latency_ns is not None:
+        charged_latency = max(0.0, raw_latency - overlap_latency_ns)
+
+    acc.add_stage("buffers_add", raw_energy, charged_latency)
+    acc.add_component("buffers_add", raw_energy, charged_latency)
+
+
 def _add_knob_analog_stage(
     *,
     acc: _TokenAccumulator,
@@ -888,10 +982,10 @@ def _add_knob_analog_stage(
     specs: ResolvedKnobSpecs,
     periphery: Any,  # AnalogPeripheryKnobs
     mode_name: str,
-) -> None:
+) -> _AnalogStageStreamInfo | None:
     active_arrays, use_adc_draft, use_adc_residual = _analog_mode(mode_name)
     if active_arrays == 0:
-        return
+        return None
 
     base_reads = float(num_tiles * num_slices)
     array_activations = base_reads * active_arrays
@@ -933,12 +1027,19 @@ def _add_knob_analog_stage(
     )
     sw_e, sw_t = periph_energy_latency(periphery.subarray_switches, energy_ops=array_activations, latency_ops=base_reads)
     wd_e, wd_t = periph_energy_latency(periphery.write_drivers, energy_ops=dac_conversions, latency_ops=base_reads)
+    output_stream_latency = _knob_output_stream_latency_ns(
+        adc_latency=adc_latency,
+        tia_latency=tia_t,
+        snh_latency=snh_t,
+        mux_latency=mux_t,
+        io_latency=io_t,
+    )
 
     stage_energy = array_energy + dac_energy + adc_draft_energy + adc_residual_energy
-    stage_latency = array_latency + dac_latency + adc_latency
+    stage_latency = array_latency + dac_latency + output_stream_latency
 
     stage_energy += tia_e + snh_e + mux_e + io_e + sw_e + wd_e
-    stage_latency += tia_t + snh_t + mux_t + io_t + sw_t + wd_t
+    stage_latency += sw_t + wd_t
 
     acc.add_stage(stage, stage_energy, stage_latency)
     acc.add_component("arrays", array_energy, array_latency)
@@ -956,6 +1057,11 @@ def _add_knob_analog_stage(
         dac_conversions=dac_conversions,
         adc_draft_conversions=adc_draft_conversions,
         adc_residual_conversions=adc_residual_conversions,
+    )
+    return _AnalogStageStreamInfo(
+        outputs=dac_conversions,
+        stream_steps=base_reads * float(adc_steps),
+        output_stream_latency_ns=output_stream_latency,
     )
 
 
@@ -994,21 +1100,13 @@ def _token_step_costs_knob(
     num_slices = ceil(model.activation_bits / hardware.analog.dac_bits)
     buf_knobs = hardware.soc.buffers_add
 
-    def add_buffers_add(acc: _TokenAccumulator, ops: float) -> None:
-        if ops <= 0.0:
-            return
-        energy = ops * buf_knobs.energy_pj_per_op
-        latency = ops * buf_knobs.latency_ns_per_op
-        acc.add_stage("buffers_add", energy, latency)
-        acc.add_component("buffers_add", energy, latency)
-
     draft = _TokenAccumulator()
     verify_full = _TokenAccumulator()
 
     for layer in range(model.n_layers):
         policy = model.draft_policy.for_layer(layer)
         for stage, precision in {"qkv": policy.qkv, "wo": policy.wo, "ffn": policy.ffn}.items():
-            _add_knob_analog_stage(
+            draft_stream = _add_knob_analog_stage(
                 acc=draft,
                 stage=stage,
                 num_tiles=num_tiles[stage],
@@ -1019,7 +1117,7 @@ def _token_step_costs_knob(
                 periphery=hardware.analog.periphery,
                 mode_name="draft_full" if precision == PrecisionMode.full else "draft_default",
             )
-            _add_knob_analog_stage(
+            verify_full_stream = _add_knob_analog_stage(
                 acc=verify_full,
                 stage=stage,
                 num_tiles=num_tiles[stage],
@@ -1031,12 +1129,28 @@ def _token_step_costs_knob(
                 mode_name="verify_bonus",
             )
 
-            outputs = float(num_tiles[stage] * num_slices * hardware.analog.xbar_size)
+            draft_multiplier = 0.0
             if hardware.reuse_policy == ReusePolicy.reuse:
-                add_buffers_add(draft, outputs)  # buffer D_reg / full outputs for reuse
+                draft_multiplier += 1.0  # buffer D_reg / full outputs for reuse
             if precision == PrecisionMode.full:
-                add_buffers_add(draft, outputs)  # ADC-output combine
-            add_buffers_add(verify_full, outputs)  # ADC-output combine (bonus token)
+                draft_multiplier += 1.0  # ADC-output combine
+            if draft_stream is not None and draft_multiplier > 0.0:
+                _add_streamed_buffers_add(
+                    acc=draft,
+                    buf_knobs=buf_knobs,
+                    outputs=draft_stream.outputs,
+                    stream_steps=draft_stream.stream_steps,
+                    op_multiplier=draft_multiplier,
+                    overlap_latency_ns=draft_stream.output_stream_latency_ns,
+                )
+            if verify_full_stream is not None:
+                _add_streamed_buffers_add(
+                    acc=verify_full,
+                    buf_knobs=buf_knobs,
+                    outputs=verify_full_stream.outputs,
+                    stream_steps=verify_full_stream.stream_steps,
+                    overlap_latency_ns=verify_full_stream.output_stream_latency_ns,
+                )  # ADC-output combine (bonus token)
 
         for feature in enabled_dpu_features:
             e_per, t_per = dpu_feature_costs[feature]
@@ -1094,14 +1208,6 @@ def _verify_drafted_token_additional_stage_knob(
     num_slices = ceil(model.activation_bits / hardware.analog.dac_bits)
     buf_knobs = hardware.soc.buffers_add
 
-    def add_buffers_add(acc: _TokenAccumulator, ops: float) -> None:
-        if ops <= 0.0:
-            return
-        energy = ops * buf_knobs.energy_pj_per_op
-        latency = ops * buf_knobs.latency_ns_per_op
-        acc.add_stage("buffers_add", energy, latency)
-        acc.add_component("buffers_add", energy, latency)
-
     additional = _TokenAccumulator()
 
     for layer in range(model.n_layers):
@@ -1115,7 +1221,7 @@ def _verify_drafted_token_additional_stage_knob(
                 else:
                     mode_name = "verify_residual_only"
 
-            _add_knob_analog_stage(
+            verify_stream = _add_knob_analog_stage(
                 acc=additional,
                 stage=stage,
                 num_tiles=num_tiles[stage],
@@ -1127,14 +1233,35 @@ def _verify_drafted_token_additional_stage_knob(
                 mode_name=mode_name,
             )
 
-            outputs = float(num_tiles[stage] * num_slices * hardware.analog.xbar_size)
             if hardware.reuse_policy == ReusePolicy.reread:
-                add_buffers_add(additional, outputs)  # ADC-output combine (re-read full)
+                if verify_stream is not None:
+                    _add_streamed_buffers_add(
+                        acc=additional,
+                        buf_knobs=buf_knobs,
+                        outputs=verify_stream.outputs,
+                        stream_steps=verify_stream.stream_steps,
+                        overlap_latency_ns=verify_stream.output_stream_latency_ns,
+                    )  # ADC-output combine (re-read full)
             else:
                 if executed_precision == PrecisionMode.full:
-                    add_buffers_add(additional, outputs)  # buffer read of stored full outputs
+                    outputs = float(num_tiles[stage] * num_slices * hardware.analog.xbar_size)
+                    stream_steps = float(num_tiles[stage] * num_slices * hardware.analog.num_columns_per_adc)
+                    _add_streamed_buffers_add(
+                        acc=additional,
+                        buf_knobs=buf_knobs,
+                        outputs=outputs,
+                        stream_steps=stream_steps,
+                    )  # buffer read of stored full outputs
                 else:
-                    add_buffers_add(additional, 2.0 * outputs)  # buffer read + Final = D_reg + C
+                    if verify_stream is not None:
+                        _add_streamed_buffers_add(
+                            acc=additional,
+                            buf_knobs=buf_knobs,
+                            outputs=verify_stream.outputs,
+                            stream_steps=verify_stream.stream_steps,
+                            op_multiplier=2.0,
+                            overlap_latency_ns=verify_stream.output_stream_latency_ns,
+                        )  # buffer read + Final = D_reg + C
 
         for feature in enabled_dpu_features:
             e_per, t_per = dpu_feature_costs[feature]
@@ -1173,14 +1300,6 @@ def _max_layer_compute_latencies_ns_knob(
     num_slices = ceil(model.activation_bits / hardware.analog.dac_bits)
     buf_knobs = hardware.soc.buffers_add
 
-    def add_buffers_add(acc: _TokenAccumulator, ops: float) -> None:
-        if ops <= 0.0:
-            return
-        energy = ops * buf_knobs.energy_pj_per_op
-        latency = ops * buf_knobs.latency_ns_per_op
-        acc.add_stage("buffers_add", energy, latency)
-        acc.add_component("buffers_add", energy, latency)
-
     ctrl_e_tok = hardware.soc.control.energy_pj_per_token
     ctrl_t_tok = hardware.soc.control.latency_ns_per_token
     ctrl_e_burst = hardware.soc.control.energy_pj_per_burst
@@ -1200,7 +1319,7 @@ def _max_layer_compute_latencies_ns_knob(
         verify_bonus = _TokenAccumulator()
 
         for stage, executed_precision in {"qkv": policy.qkv, "wo": policy.wo, "ffn": policy.ffn}.items():
-            _add_knob_analog_stage(
+            draft_stream = _add_knob_analog_stage(
                 acc=draft,
                 stage=stage,
                 num_tiles=num_tiles[stage],
@@ -1219,7 +1338,7 @@ def _max_layer_compute_latencies_ns_knob(
                     verify_mode_name = "none"
                 else:
                     verify_mode_name = "verify_residual_only"
-            _add_knob_analog_stage(
+            verify_drafted_stream = _add_knob_analog_stage(
                 acc=verify_drafted,
                 stage=stage,
                 num_tiles=num_tiles[stage],
@@ -1231,7 +1350,7 @@ def _max_layer_compute_latencies_ns_knob(
                 mode_name=verify_mode_name,
             )
 
-            _add_knob_analog_stage(
+            verify_bonus_stream = _add_knob_analog_stage(
                 acc=verify_bonus,
                 stage=stage,
                 num_tiles=num_tiles[stage],
@@ -1243,21 +1362,58 @@ def _max_layer_compute_latencies_ns_knob(
                 mode_name="verify_bonus",
             )
 
-            outputs = float(num_tiles[stage] * num_slices * hardware.analog.xbar_size)
-
+            draft_multiplier = 0.0
             if hardware.reuse_policy == ReusePolicy.reuse:
-                add_buffers_add(draft, outputs)  # buffer D_reg / full outputs for reuse
+                draft_multiplier += 1.0  # buffer D_reg / full outputs for reuse
             if executed_precision == PrecisionMode.full:
-                add_buffers_add(draft, outputs)  # ADC-output combine
-            add_buffers_add(verify_bonus, outputs)  # ADC-output combine (bonus token)
+                draft_multiplier += 1.0  # ADC-output combine
+            if draft_stream is not None and draft_multiplier > 0.0:
+                _add_streamed_buffers_add(
+                    acc=draft,
+                    buf_knobs=buf_knobs,
+                    outputs=draft_stream.outputs,
+                    stream_steps=draft_stream.stream_steps,
+                    op_multiplier=draft_multiplier,
+                    overlap_latency_ns=draft_stream.output_stream_latency_ns,
+                )
+            if verify_bonus_stream is not None:
+                _add_streamed_buffers_add(
+                    acc=verify_bonus,
+                    buf_knobs=buf_knobs,
+                    outputs=verify_bonus_stream.outputs,
+                    stream_steps=verify_bonus_stream.stream_steps,
+                    overlap_latency_ns=verify_bonus_stream.output_stream_latency_ns,
+                )  # ADC-output combine (bonus token)
 
             if hardware.reuse_policy == ReusePolicy.reread:
-                add_buffers_add(verify_drafted, outputs)  # ADC-output combine (re-read full)
+                if verify_drafted_stream is not None:
+                    _add_streamed_buffers_add(
+                        acc=verify_drafted,
+                        buf_knobs=buf_knobs,
+                        outputs=verify_drafted_stream.outputs,
+                        stream_steps=verify_drafted_stream.stream_steps,
+                        overlap_latency_ns=verify_drafted_stream.output_stream_latency_ns,
+                    )  # ADC-output combine (re-read full)
             else:
                 if executed_precision == PrecisionMode.full:
-                    add_buffers_add(verify_drafted, outputs)  # buffer read of stored full outputs
+                    outputs = float(num_tiles[stage] * num_slices * hardware.analog.xbar_size)
+                    stream_steps = float(num_tiles[stage] * num_slices * hardware.analog.num_columns_per_adc)
+                    _add_streamed_buffers_add(
+                        acc=verify_drafted,
+                        buf_knobs=buf_knobs,
+                        outputs=outputs,
+                        stream_steps=stream_steps,
+                    )  # buffer read of stored full outputs
                 else:
-                    add_buffers_add(verify_drafted, 2.0 * outputs)  # buffer read + Final = D_reg + C
+                    if verify_drafted_stream is not None:
+                        _add_streamed_buffers_add(
+                            acc=verify_drafted,
+                            buf_knobs=buf_knobs,
+                            outputs=verify_drafted_stream.outputs,
+                            stream_steps=verify_drafted_stream.stream_steps,
+                            op_multiplier=2.0,
+                            overlap_latency_ns=verify_drafted_stream.output_stream_latency_ns,
+                        )  # buffer read + Final = D_reg + C
 
         for feature in enabled_dpu_features:
             e_per, t_per = dpu_feature_costs[feature]
@@ -1336,60 +1492,94 @@ def _max_layer_compute_latencies_ns_legacy(
 
         for block, executed_precision in {"qkv": policy.qkv, "wo": policy.wo, "ffn": policy.ffn}.items():
             e_per, t_per = _analog_cost_for_block(hardware, executed_precision)
-            draft = draft.add_energy_latency(block, analog_macs[block] * e_per, analog_macs[block] * t_per)
+            draft_block_latency = analog_macs[block] * t_per
+            draft = draft.add_energy_latency(block, analog_macs[block] * e_per, draft_block_latency)
 
             assert hardware.costs is not None
+            verify_bonus_block_latency = analog_macs[block] * hardware.costs.analog_full.latency_ns_per_mac
             verify_bonus = verify_bonus.add_energy_latency(
                 block,
                 analog_macs[block] * hardware.costs.analog_full.energy_pj_per_mac,
-                analog_macs[block] * hardware.costs.analog_full.latency_ns_per_mac,
+                verify_bonus_block_latency,
             )
 
             e_add, t_add = _verify_additional_cost_for_block(hardware, executed_precision, token_kind="drafted")
+            verify_drafted_block_latency = analog_macs[block] * t_add
             verify_drafted = verify_drafted.add_energy_latency(
                 block,
                 analog_macs[block] * e_add,
-                analog_macs[block] * t_add,
+                verify_drafted_block_latency,
             )
 
             outputs = float(analog_outputs[block])
             if hardware.reuse_policy == ReusePolicy.reuse:
+                energy, latency = _legacy_buffers_add_overlap_latency(
+                    analog_latency_ns=draft_block_latency,
+                    outputs=outputs,
+                    buf_knobs=buf_knobs,
+                )
                 draft = draft.add_energy_latency(
                     "buffers_add",
-                    outputs * buf_knobs.energy_pj_per_op,
-                    outputs * buf_knobs.latency_ns_per_op,
+                    energy,
+                    latency,
                 )
             if executed_precision == PrecisionMode.full:
+                energy, latency = _legacy_buffers_add_overlap_latency(
+                    analog_latency_ns=draft_block_latency,
+                    outputs=outputs,
+                    buf_knobs=buf_knobs,
+                )
                 draft = draft.add_energy_latency(
                     "buffers_add",
-                    outputs * buf_knobs.energy_pj_per_op,
-                    outputs * buf_knobs.latency_ns_per_op,
+                    energy,
+                    latency,
                 )
 
+            bonus_energy, bonus_latency = _legacy_buffers_add_overlap_latency(
+                analog_latency_ns=verify_bonus_block_latency,
+                outputs=outputs,
+                buf_knobs=buf_knobs,
+            )
             verify_bonus = verify_bonus.add_energy_latency(
                 "buffers_add",
-                outputs * buf_knobs.energy_pj_per_op,
-                outputs * buf_knobs.latency_ns_per_op,
+                bonus_energy,
+                bonus_latency,
             )
 
             if hardware.reuse_policy == ReusePolicy.reread:
+                energy, latency = _legacy_buffers_add_overlap_latency(
+                    analog_latency_ns=verify_drafted_block_latency,
+                    outputs=outputs,
+                    buf_knobs=buf_knobs,
+                )
                 verify_drafted = verify_drafted.add_energy_latency(
                     "buffers_add",
-                    outputs * buf_knobs.energy_pj_per_op,
-                    outputs * buf_knobs.latency_ns_per_op,
+                    energy,
+                    latency,
                 )
             else:
                 if executed_precision == PrecisionMode.full:
+                    energy, latency = _legacy_buffers_add_overlap_latency(
+                        analog_latency_ns=0.0,
+                        outputs=outputs,
+                        buf_knobs=buf_knobs,
+                    )
                     verify_drafted = verify_drafted.add_energy_latency(
                         "buffers_add",
-                        outputs * buf_knobs.energy_pj_per_op,
-                        outputs * buf_knobs.latency_ns_per_op,
+                        energy,
+                        latency,
                     )
                 else:
+                    energy, latency = _legacy_buffers_add_overlap_latency(
+                        analog_latency_ns=verify_drafted_block_latency,
+                        outputs=outputs,
+                        buf_knobs=buf_knobs,
+                        op_multiplier=2.0,
+                    )
                     verify_drafted = verify_drafted.add_energy_latency(
                         "buffers_add",
-                        2.0 * outputs * buf_knobs.energy_pj_per_op,
-                        2.0 * outputs * buf_knobs.latency_ns_per_op,
+                        energy,
+                        latency,
                     )
 
         for feature in enabled_dpu_features:
@@ -1522,69 +1712,20 @@ def estimate_point(
 
     _, _, verify_bonus_full_step = step_costs(l_prompt + stats.k)
 
-    if hardware.soc.schedule == ScheduleMode.layer_pipelined:
-        verify_drafted_phase = verify_drafted_template.scale(0.0)
-        for i, verify_step_i in enumerate(verify_drafted_steps):
-            p_execute_i = sum(prob for accepted_prefix, prob in hist.items() if accepted_prefix >= i)
-            verify_drafted_phase = _sum_breakdowns(verify_drafted_phase, verify_step_i.scale(p_execute_i))
-
-        p_full_accept = hist.get(stats.k, 0.0)
-        verify_setup_phase = _verify_setup_breakdown(model, hardware)
-        verify_bonus_phase = _sum_breakdowns(
-            verify_setup_phase.scale(1.0 - p_full_accept),
-            verify_bonus_full_step.scale(p_full_accept),
-        )
-    else:
-        verify_drafted_phase = verify_drafted_template.scale(0.0)
-        for verify_step_i in verify_drafted_steps:
-            verify_drafted_phase = _sum_breakdowns(verify_drafted_phase, verify_step_i)
-        verify_bonus_phase = verify_bonus_full_step
+    verify_drafted_phase = verify_drafted_template.scale(0.0)
+    for verify_step_i in verify_drafted_steps:
+        verify_drafted_phase = _sum_breakdowns(verify_drafted_phase, verify_step_i)
+    verify_bonus_phase = verify_bonus_full_step
 
     committed = expected_committed_tokens_per_burst(stats)
     if committed <= 0:
         raise ValueError("Expected committed tokens per burst must be > 0")
 
     if hardware.memory is not None:
-        if hardware.soc.schedule == ScheduleMode.layer_pipelined:
-            draft_traffic = MemoryTraffic()
-            verify_drafted_traffic = MemoryTraffic()
-            for i in range(stats.k):
-                step_traffic_i = _kv_memory_step_traffic(
-                    model=model,
-                    hardware=hardware,
-                    prompt_tokens_from_hbm=float(l_prompt),
-                    speculative_tokens_from_sram=float(i),
-                    speculative_tokens_to_sram=1.0,
-                    committed_tokens_to_hbm=0.0,
-                )
-                draft_traffic = draft_traffic.plus(step_traffic_i)
-
-                p_execute_i = sum(prob for accepted_prefix, prob in hist.items() if accepted_prefix >= i)
-                verify_drafted_traffic = verify_drafted_traffic.plus(step_traffic_i.scale(p_execute_i))
-
-            p_full_accept = hist.get(stats.k, 0.0)
-            bonus_step_traffic = _kv_memory_step_traffic(
-                model=model,
-                hardware=hardware,
-                prompt_tokens_from_hbm=float(l_prompt),
-                speculative_tokens_from_sram=float(stats.k),
-                speculative_tokens_to_sram=1.0,
-                committed_tokens_to_hbm=0.0,
-            )
-            commit_traffic = _kv_memory_step_traffic(
-                model=model,
-                hardware=hardware,
-                prompt_tokens_from_hbm=0.0,
-                speculative_tokens_from_sram=0.0,
-                speculative_tokens_to_sram=0.0,
-                committed_tokens_to_hbm=committed,
-            )
-            verify_bonus_traffic = bonus_step_traffic.scale(p_full_accept).plus(commit_traffic)
-        else:
-            traffic = _kv_memory_traffic_by_phase(model=model, hardware=hardware, stats=stats, l_prompt=l_prompt)
-            draft_traffic = traffic["draft"]
-            verify_drafted_traffic = traffic["verify_drafted"]
-            verify_bonus_traffic = traffic["verify_bonus"]
+        traffic = _kv_memory_traffic_by_phase(model=model, hardware=hardware, stats=stats, l_prompt=l_prompt)
+        draft_traffic = traffic["draft"]
+        verify_drafted_traffic = traffic["verify_drafted"]
+        verify_bonus_traffic = traffic["verify_bonus"]
 
         draft_phase = _add_memory_traffic_costs(breakdown=draft_phase, traffic=draft_traffic, hardware=hardware)
         verify_drafted_phase = _add_memory_traffic_costs(
@@ -1602,7 +1743,7 @@ def estimate_point(
     dynamic_burst_energy_pj = total_phase.energy_pj
     effective_burst_latency_ns = total_phase.latency_ns
 
-    if hardware.soc.schedule == ScheduleMode.layer_pipelined:
+    if hardware.soc.schedule == ScheduleMode.layer_pipelined and stats.k > 0:
         if hardware.mode == HardwareMode.legacy:
 
             def max_layer_latencies(context_len: int) -> tuple[float, float, float]:
@@ -1641,45 +1782,20 @@ def estimate_point(
             verify_step_periods.append(max(max_verify_drafted_step, mem_verify_step))
 
         _unused_draft, _unused_verify_drafted, max_verify_bonus_step = max_layer_latencies(l_prompt + stats.k)
-        verify_setup_period = hardware.soc.control.latency_ns_per_burst + hardware.soc.verify_setup.latency_ns_per_burst
         draft_serial_latency = draft_phase.latency_ns
-
-        t_burst_pipe = 0.0
-        for accepted_prefix, prob in hist.items():
-            executed_steps = _executed_verify_drafted_steps_for_outcome(k=stats.k, accepted_prefix=accepted_prefix)
-            verify_wavefront_latency = sum(verify_step_periods[:executed_steps])
-            committed_tokens_outcome = accepted_prefix + 1
-
-            if _executes_verify_bonus_for_outcome(k=stats.k, accepted_prefix=accepted_prefix):
-                mem_bonus = 0.0
-                if hardware.memory is not None:
-                    bonus_traffic = _kv_memory_step_traffic(
-                        model=model,
-                        hardware=hardware,
-                        prompt_tokens_from_hbm=float(l_prompt),
-                        speculative_tokens_from_sram=float(stats.k),
-                        speculative_tokens_to_sram=1.0,
-                        committed_tokens_to_hbm=float(committed_tokens_outcome),
-                    )
-                    _mem_energy, mem_bonus = _memory_cost_from_traffic(hardware=hardware, traffic=bonus_traffic)
-                tail_latency = max(max_verify_bonus_step, mem_bonus)
-            else:
-                mem_commit = 0.0
-                if hardware.memory is not None:
-                    commit_traffic_outcome = _kv_memory_step_traffic(
-                        model=model,
-                        hardware=hardware,
-                        prompt_tokens_from_hbm=0.0,
-                        speculative_tokens_from_sram=0.0,
-                        speculative_tokens_to_sram=0.0,
-                        committed_tokens_to_hbm=float(committed_tokens_outcome),
-                    )
-                    _mem_energy, mem_commit = _memory_cost_from_traffic(hardware=hardware, traffic=commit_traffic_outcome)
-                tail_latency = max(verify_setup_period, mem_commit)
-
-            t_burst_pipe += prob * (draft_serial_latency + verify_wavefront_latency + tail_latency)
-
-        effective_burst_latency_ns = t_burst_pipe
+        mem_bonus = 0.0
+        if hardware.memory is not None:
+            bonus_traffic = _kv_memory_step_traffic(
+                model=model,
+                hardware=hardware,
+                prompt_tokens_from_hbm=float(l_prompt),
+                speculative_tokens_from_sram=float(stats.k),
+                speculative_tokens_to_sram=1.0,
+                committed_tokens_to_hbm=0.0,
+            )
+            _mem_energy, mem_bonus = _memory_cost_from_traffic(hardware=hardware, traffic=bonus_traffic)
+        tail_latency = max(max_verify_bonus_step, mem_bonus)
+        effective_burst_latency_ns = draft_serial_latency + sum(verify_step_periods) + tail_latency
 
     leakage_power_nw = _total_leakage_power_nw(hardware)
     leakage_energy_pj = _leakage_energy_pj(
@@ -1840,8 +1956,11 @@ def estimate_sweep(
         notes=[
             "Analytical calculator (closed-form activation counts, no event simulation).",
             "Serialized phase accounting is step-indexed with context growth L_i = L_prompt + i.",
-            "Layer-pipelined mode keeps draft serialized and uses outcome-conditioned verify wavefront execution.",
-            "Layer-pipelined verify stops at first mismatch; full acceptance executes and commits one bonus token.",
+            "Layer-pipelined mode keeps draft serialized, uses stop-and-go full-precision baseline for K=0, and executes a fixed K+1 verify burst for K>0.",
+            "Acceptance affects committed outputs and commit-side writes, but does not shorten verify-burst execution in layer-pipelined mode.",
+            "Buffers/add on analog output streams use ADC-lane-parallel timing and charge only incremental latency beyond the modeled output stream.",
+            "ADC-side readout periphery (TIA/SNH/MUX/IO) uses overlap-aware bottleneck timing on the analog output stream.",
+            "Memory movement latency uses transfer-path bottlenecks while SRAM/HBM/fabric energy remains additive.",
             "Leakage energy uses E_leak_burst[pJ] = P_leak_total[nW] * T_burst_effective[ns] * 1e-6.",
             "Leakage timing is schedule-aware: serialized uses serialized burst time, layer-pipelined uses pipelined burst time.",
             "Breakdown latencies are serialized sums; `soc.schedule` affects how latency/token is reported.",

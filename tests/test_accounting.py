@@ -30,6 +30,28 @@ def _knob_hardware(*, reuse_policy: str = "reuse", dac_bits: int = 4) -> Hardwar
     )
 
 
+def _legacy_hardware(*, reuse_policy: str = "reuse", buffers_latency_ns_per_op: float = 0.0) -> HardwareConfig:
+    return HardwareConfig.model_validate(
+        {
+            "reuse_policy": reuse_policy,
+            "costs": {
+                "analog_draft": {"energy_pj_per_mac": 0.001, "latency_ns_per_mac": 0.001},
+                "analog_full": {"energy_pj_per_mac": 0.002, "latency_ns_per_mac": 0.0015},
+                "analog_verify_reuse": {"energy_pj_per_mac": 0.0006, "latency_ns_per_mac": 0.0008},
+                "digital_attention": {"energy_pj_per_mac": 0.0004, "latency_ns_per_mac": 0.0007},
+                "digital_softmax": {"energy_pj_per_mac": 0.00005, "latency_ns_per_mac": 0.00005},
+                "digital_elementwise": {"energy_pj_per_mac": 0.00002, "latency_ns_per_mac": 0.00002},
+                "kv_cache": {"energy_pj_per_mac": 0.0001, "latency_ns_per_mac": 0.0001},
+                "analog_weight_area": {"area_mm2_per_weight": 1e-9},
+                "digital_overhead_area_mm2_per_layer": 0.01,
+            },
+            "soc": {
+                "buffers_add": {"energy_pj_per_op": 0.01, "latency_ns_per_op": buffers_latency_ns_per_op},
+            },
+        }
+    )
+
+
 def test_dac_slicing_scales_analog_counts_and_dac_energy() -> None:
     model = ModelConfig.model_validate(BASE_MODEL)
     stats = SpeculationStats(k=0, histogram={0: 1.0})
@@ -169,3 +191,37 @@ def test_split_adc_modes_use_shared_dac_across_active_arrays() -> None:
     assert reread_verify_counts.adc_residual_conversions > 0.0
     assert reread_verify_counts.adc_draft_conversions == pytest.approx(reread_verify_counts.adc_residual_conversions)
     assert reread_verify_counts.dac_conversions == pytest.approx(reread_verify_counts.adc_draft_conversions)
+
+
+def test_legacy_buffers_add_latency_uses_incremental_overlap() -> None:
+    model = ModelConfig.model_validate(BASE_MODEL)
+    stats = SpeculationStats(k=1, histogram={0: 1.0})
+    hardware = _legacy_hardware(reuse_policy="reuse", buffers_latency_ns_per_op=1.0)
+
+    _, breakdown = estimate_point(
+        model=model,
+        hardware=hardware,
+        stats=stats,
+        l_prompt=64,
+    )
+
+    outputs = {"qkv": 3 * model.d_model, "wo": model.d_model, "ffn": model.effective_d_ff + model.d_model}
+    analog_macs = {
+        "qkv": 3 * model.d_model * model.d_model,
+        "wo": model.d_model * model.d_model,
+        "ffn": 2 * model.d_model * model.effective_d_ff,
+    }
+    expected_draft = sum(
+        max(0.0, float(outputs[name]) - analog_macs[name] * hardware.costs.analog_draft.latency_ns_per_mac)
+        for name in outputs
+    )
+    expected_verify = sum(
+        max(0.0, 2.0 * float(outputs[name]) - analog_macs[name] * hardware.costs.analog_verify_reuse.latency_ns_per_mac)
+        for name in outputs
+    )
+    raw_serialized = sum(float(v) for v in outputs.values())
+
+    assert breakdown.draft.stages.buffers_add_latency_ns == pytest.approx(expected_draft)
+    assert breakdown.verify_drafted.stages.buffers_add_latency_ns == pytest.approx(expected_verify)
+    assert breakdown.draft.stages.buffers_add_latency_ns < raw_serialized
+    assert breakdown.verify_drafted.stages.buffers_add_latency_ns > breakdown.draft.stages.buffers_add_latency_ns

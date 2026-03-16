@@ -109,7 +109,7 @@ def test_report_exposes_layer_pipelined_verify_wavefront_policy_metadata() -> No
     assert policy["schedule"] == "layer-pipelined"
     assert policy["draft_stage"] == "serialized"
     assert policy["verify_stage"] == "wavefront"
-    assert policy["mismatch_policy"] == "stop-at-first-mismatch"
+    assert policy["mismatch_policy"] == "no-early-stop-execute-full-burst"
     assert policy["bonus_in_verify_wavefront"] is True
 
 
