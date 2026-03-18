@@ -16,6 +16,17 @@ ppa-calculator \
   --output out/report.json
 ```
 
+For optimal-`K` sweeps from measured acceptance means:
+
+```bash
+ppa-k-sweep \
+  --model examples/model_qwen3_0p6b.yaml \
+  --hardware examples/hardware_soc_area.yaml \
+  --acceptance-sweep acceptance_sweep.yaml \
+  --prompt-lengths 128 \
+  --output out/k_sweep.json
+```
+
 ## `model.yaml`
 
 `activation_bits` is required and is used with `analog.dac_bits` to compute serial slicing:
@@ -157,6 +168,35 @@ The JSON report includes:
 - area reporting:
   - stage-level `area` (`qkv/wo/ffn/digital` mm^2, backward compatible), and
   - component-level `area_breakdown_mm2` with `on_chip_mm2`, `off_chip_hbm_mm2`, and `on_chip_components` (arrays/DAC/ADC/periphery/SRAM/fabric/digital-overhead).
+
+## `ppa-k-sweep`
+
+`ppa-k-sweep` evaluates multiple candidate burst lengths `K` from measured acceptance summaries.
+
+Input format (`json|yaml`) supports either:
+
+```yaml
+candidates:
+  - k: 1
+    expected_accepted_tokens: 0.8
+  - k: 5
+    expected_accepted_tokens: 4.85
+```
+
+or a shorthand map:
+
+```yaml
+1: 0.8
+5: 4.85
+```
+
+For each candidate, the tool:
+
+- builds estimator-compatible stats from `E[a] = expected_accepted_tokens`,
+- evaluates latency/token, throughput, and tokens/J for each prompt length,
+- reports the best `K` by throughput and by tokens/J.
+
+The current pipeline model only needs the mean accepted drafted tokens for this ranking because verify burst execution is fixed for a given `K`; the tool synthesizes a minimal two-bin histogram that preserves the same mean.
 
 ## Modeling assumptions
 
