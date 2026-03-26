@@ -198,6 +198,53 @@ For each candidate, the tool:
 
 The current pipeline model only needs the mean accepted drafted tokens for this ranking because verify burst execution is fixed for a given `K`; the tool synthesizes a minimal two-bin histogram that preserves the same mean.
 
+## `ppa-batch-inputs`
+
+`ppa-batch-inputs` batch-processes the current simulator sweep files under `inputs/`.
+
+Default behavior:
+
+```bash
+ppa-batch-inputs
+```
+
+This:
+
+- scans `inputs/*.json`,
+- reads `results_by_k.<K>.mean_accepted` from each file,
+- infers the model config from the checkpoint path,
+- applies ADC-bit overrides from the input file on top of a hardware template,
+- writes one detailed JSON output per input file under `out/batch_inputs/`,
+- writes:
+  - `out/batch_inputs/summary.json`
+  - `out/batch_inputs/summary.md`
+  - `out/batch_inputs/summary_best.json`
+  - `out/batch_inputs/summary_best.md`
+
+The default hardware template is:
+
+```text
+examples/hardware_soc_area.yaml
+```
+
+`summary.md` contains the full table across every `(input file, K)` row.
+
+`summary_best.md` contains one best-throughput row per input file.
+
+The summary table columns are:
+
+- model
+- ADC bits
+- K value
+- acceptance rate
+- final PPA
+
+where `final PPA` is rendered as a compact metrics string:
+
+```text
+lat=<...>us/tok; thr=<...> tok/s; tok/J=<...>; area=<...>mm^2
+```
+
 ## Modeling assumptions
 
 - This project is an analytical calculator (closed-form counting), not an event/instruction simulator.
@@ -209,6 +256,7 @@ The current pipeline model only needs the mean accepted drafted tokens for this 
   - `layer-pipelined`: draft remains serialized; verify executes a fixed pipelined burst.
     - `K=0`: reported latency/token falls back to stop-and-go full-precision token latency.
     - `K>0`: verify always executes `K` drafted-token verify steps plus one bonus step (`K+1` total verify steps).
+    - verify burst latency includes pipeline fill: the first verify token pays full serialized verify latency, and later verify tokens advance at the bottleneck stage period.
     - acceptance affects committed tokens and commit-side writes, but does not shorten verify-burst execution.
 - DPU feature coefficients support backward-compatible fallback:
   - missing `digital.features.*` entries are mapped from coarse digital coefficients.

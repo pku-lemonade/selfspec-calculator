@@ -72,3 +72,7 @@ def main(argv: list[str] | None = None) -> int:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(text + "\n", encoding="utf-8")
     return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

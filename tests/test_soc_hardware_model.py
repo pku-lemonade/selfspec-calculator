@@ -3,7 +3,12 @@ from math import ceil
 import pytest
 
 from selfspec_calculator.config import HardwareConfig, ModelConfig
-from selfspec_calculator.estimator import _memory_cost_from_traffic, estimate_point, estimate_sweep
+from selfspec_calculator.estimator import (
+    _max_layer_compute_latencies_ns_knob,
+    _memory_cost_from_traffic,
+    estimate_point,
+    estimate_sweep,
+)
 from selfspec_calculator.report import MemoryTraffic
 from selfspec_calculator.stats import SpeculationStats
 
@@ -525,6 +530,48 @@ def test_layer_pipelined_verify_work_is_fixed_but_commit_writes_follow_acceptanc
     expected_accept_write = float(k + 1) * n_layers * bytes_per_token_per_layer
     assert b_mismatch.verify_bonus.memory_traffic.hbm_write_bytes == pytest.approx(expected_mismatch_write)
     assert b_accept.verify_bonus.memory_traffic.hbm_write_bytes == pytest.approx(expected_accept_write)
+
+
+def test_layer_pipelined_verify_burst_includes_first_token_fill_latency() -> None:
+    model = ModelConfig.model_validate(BASE_MODEL)
+    k = 3
+    l_prompt = 64
+    hw_pipe = _base_knob_hardware(soc={"schedule": "layer-pipelined"})
+    hw_serial = _base_knob_hardware(soc={"schedule": "serialized"})
+
+    m_pipe, b_pipe = estimate_point(model=model, hardware=hw_pipe, stats=SpeculationStats(k=k, histogram={k: 1.0}), l_prompt=l_prompt)
+    _, b_first = estimate_point(
+        model=model,
+        hardware=hw_serial,
+        stats=SpeculationStats(k=1, histogram={0: 1.0}),
+        l_prompt=l_prompt,
+    )
+
+    specs = hw_pipe.resolve_knob_specs()
+    verify_periods = []
+    for i in range(k):
+        _draft, verify_drafted, _bonus = _max_layer_compute_latencies_ns_knob(
+            model=model,
+            hardware=hw_pipe,
+            specs=specs,
+            l_prompt=l_prompt + i,
+        )
+        verify_periods.append(verify_drafted)
+
+    _draft, _verify_drafted, verify_bonus_period = _max_layer_compute_latencies_ns_knob(
+        model=model,
+        hardware=hw_pipe,
+        specs=specs,
+        l_prompt=l_prompt + k,
+    )
+
+    expected_burst = (
+        b_pipe.draft.latency_ns
+        + b_first.verify_drafted.latency_ns
+        + sum(verify_periods[1:])
+        + verify_bonus_period
+    )
+    assert m_pipe.latency_ns_per_token * float(k + 1) == pytest.approx(expected_burst)
 
 
 def test_layer_pipelined_keeps_draft_phase_serialized() -> None:

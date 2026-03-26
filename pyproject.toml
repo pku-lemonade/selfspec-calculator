@@ -21,6 +21,7 @@ dev = [
 [project.scripts]
 ppa-calculator = "selfspec_calculator.cli:main"
 ppa-k-sweep = "selfspec_calculator.k_sweep_cli:main"
+ppa-batch-inputs = "selfspec_calculator.batch_inputs_cli:main"
 
 [tool.setuptools]
 package-dir = { "" = "src" }

@@ -1765,10 +1765,12 @@ def estimate_point(
                 )
 
         verify_step_periods: list[float] = []
+        verify_step_serial_latencies: list[float] = []
         for i in range(stats.k):
             context_len = l_prompt + i
             _max_draft_step, max_verify_drafted_step, _max_verify_bonus_step = max_layer_latencies(context_len)
             mem_verify_step = 0.0
+            verify_step_serial_latency = verify_drafted_steps[i].latency_ns
             if hardware.memory is not None:
                 verify_step_traffic = _kv_memory_step_traffic(
                     model=model,
@@ -1779,7 +1781,9 @@ def estimate_point(
                     committed_tokens_to_hbm=0.0,
                 )
                 _mem_energy, mem_verify_step = _memory_cost_from_traffic(hardware=hardware, traffic=verify_step_traffic)
+                verify_step_serial_latency += mem_verify_step
             verify_step_periods.append(max(max_verify_drafted_step, mem_verify_step))
+            verify_step_serial_latencies.append(verify_step_serial_latency)
 
         _unused_draft, _unused_verify_drafted, max_verify_bonus_step = max_layer_latencies(l_prompt + stats.k)
         draft_serial_latency = draft_phase.latency_ns
@@ -1795,7 +1799,9 @@ def estimate_point(
             )
             _mem_energy, mem_bonus = _memory_cost_from_traffic(hardware=hardware, traffic=bonus_traffic)
         tail_latency = max(max_verify_bonus_step, mem_bonus)
-        effective_burst_latency_ns = draft_serial_latency + sum(verify_step_periods) + tail_latency
+        verify_fill_latency = verify_step_serial_latencies[0] if verify_step_serial_latencies else 0.0
+        steady_state_verify_latency = sum(verify_step_periods[1:])
+        effective_burst_latency_ns = draft_serial_latency + verify_fill_latency + steady_state_verify_latency + tail_latency
 
     leakage_power_nw = _total_leakage_power_nw(hardware)
     leakage_energy_pj = _leakage_energy_pj(
