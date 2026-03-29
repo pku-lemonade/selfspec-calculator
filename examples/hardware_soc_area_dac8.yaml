@@ -1,0 +1,25 @@
+reuse_policy: reuse
+library: science_adi9405_v1_neurosim
+
+soc:
+  # In layer-pipelined mode, latency/token is reported as a steady-state token period
+  # bounded by the slowest layer-stage and shared resources (e.g., memory bandwidth).
+  schedule: layer-pipelined
+
+memory:
+  # Bytes-based KV-cache model (Policy B): HBM writes are commit-only.
+  # PPA + area coefficients are resolved from the selected library.
+  kv_cache:
+    max_context_tokens: 8192
+    hbm:
+      value_bytes_per_elem: 1
+      scale_bytes: 2
+      scales_per_token_per_head: 2
+
+analog:
+  xbar_size: 128
+  num_columns_per_adc: 16
+  dac_bits: 8
+  adc:
+    draft_bits: 4
+    residual_bits: 12

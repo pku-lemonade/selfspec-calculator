@@ -623,6 +623,10 @@ def _area_breakdown_mm2(model: ModelConfig, hardware: HardwareConfig) -> AreaBre
         adc_units_per_path = tiles_total_logical * float(hardware.analog.xbar_size // hardware.analog.num_columns_per_adc)
 
         dac_mm2 = dac_units * specs.dac.area_mm2_per_unit
+        delta_area_bits = hardware.analog.delta_readout.effective_area_dac_bits(hardware.analog.dac_bits)
+        if delta_area_bits is not None:
+            delta_dac_spec = hardware.resolve_dac_spec_for_bits(delta_area_bits)
+            dac_mm2 += dac_units * delta_dac_spec.area_mm2_per_unit
         adc_draft_mm2 = adc_units_per_path * specs.adc_draft.area_mm2_per_unit
         adc_residual_mm2 = adc_units_per_path * specs.adc_residual.area_mm2_per_unit
 
@@ -981,6 +985,7 @@ def _add_knob_analog_stage(
     adc_steps: int,
     specs: ResolvedKnobSpecs,
     periphery: Any,  # AnalogPeripheryKnobs
+    hardware: HardwareConfig,
     mode_name: str,
 ) -> _AnalogStageStreamInfo | None:
     active_arrays, use_adc_draft, use_adc_residual = _analog_mode(mode_name)
@@ -1002,6 +1007,19 @@ def _add_knob_analog_stage(
 
     array_latency = base_reads * specs.array.latency_ns_per_activation
     dac_latency = base_reads * specs.dac.latency_ns_per_conversion
+    delta_dac_energy = 0.0
+    delta_dac_latency = 0.0
+    assert hardware.analog is not None
+    delta_mode = None
+    if mode_name.startswith('draft'):
+        delta_mode = hardware.analog.delta_readout.draft
+    elif mode_name.startswith('verify'):
+        delta_mode = hardware.analog.delta_readout.verify
+    if delta_mode is not None and delta_mode.enabled:
+        delta_bits = delta_mode.dac_bits or hardware.analog.dac_bits
+        delta_dac_spec = hardware.resolve_dac_spec_for_bits(delta_bits)
+        delta_dac_energy = dac_conversions * delta_dac_spec.energy_pj_per_conversion
+        delta_dac_latency = base_reads * delta_dac_spec.latency_ns_per_conversion
     adc_draft_scan = (
         base_reads * adc_steps * specs.adc_draft.latency_ns_per_conversion if use_adc_draft else 0.0
     )
@@ -1035,15 +1053,18 @@ def _add_knob_analog_stage(
         io_latency=io_t,
     )
 
-    stage_energy = array_energy + dac_energy + adc_draft_energy + adc_residual_energy
-    stage_latency = array_latency + dac_latency + output_stream_latency
+    dac_energy_total = dac_energy + delta_dac_energy
+    dac_path_latency = max(dac_latency, delta_dac_latency)
+
+    stage_energy = array_energy + dac_energy_total + adc_draft_energy + adc_residual_energy
+    stage_latency = array_latency + dac_path_latency + output_stream_latency
 
     stage_energy += tia_e + snh_e + mux_e + io_e + sw_e + wd_e
     stage_latency += sw_t + wd_t
 
     acc.add_stage(stage, stage_energy, stage_latency)
     acc.add_component("arrays", array_energy, array_latency)
-    acc.add_component("dac", dac_energy, dac_latency)
+    acc.add_component("dac", dac_energy_total, dac_path_latency)
     acc.add_component("adc_draft", adc_draft_energy, adc_draft_latency)
     acc.add_component("adc_residual", adc_residual_energy, adc_residual_latency)
     acc.add_component("tia", tia_e, tia_t)
@@ -1115,6 +1136,7 @@ def _token_step_costs_knob(
                 adc_steps=hardware.analog.num_columns_per_adc,
                 specs=specs,
                 periphery=hardware.analog.periphery,
+                hardware=hardware,
                 mode_name="draft_full" if precision == PrecisionMode.full else "draft_default",
             )
             verify_full_stream = _add_knob_analog_stage(
@@ -1126,6 +1148,7 @@ def _token_step_costs_knob(
                 adc_steps=hardware.analog.num_columns_per_adc,
                 specs=specs,
                 periphery=hardware.analog.periphery,
+                hardware=hardware,
                 mode_name="verify_bonus",
             )
 
@@ -1230,6 +1253,7 @@ def _verify_drafted_token_additional_stage_knob(
                 adc_steps=hardware.analog.num_columns_per_adc,
                 specs=specs,
                 periphery=hardware.analog.periphery,
+                hardware=hardware,
                 mode_name=mode_name,
             )
 
@@ -1328,6 +1352,7 @@ def _max_layer_compute_latencies_ns_knob(
                 adc_steps=hardware.analog.num_columns_per_adc,
                 specs=specs,
                 periphery=hardware.analog.periphery,
+                hardware=hardware,
                 mode_name="draft_full" if executed_precision == PrecisionMode.full else "draft_default",
             )
 
@@ -1347,6 +1372,7 @@ def _max_layer_compute_latencies_ns_knob(
                 adc_steps=hardware.analog.num_columns_per_adc,
                 specs=specs,
                 periphery=hardware.analog.periphery,
+                hardware=hardware,
                 mode_name=verify_mode_name,
             )
 
@@ -1359,6 +1385,7 @@ def _max_layer_compute_latencies_ns_knob(
                 adc_steps=hardware.analog.num_columns_per_adc,
                 specs=specs,
                 periphery=hardware.analog.periphery,
+                hardware=hardware,
                 mode_name="verify_bonus",
             )
 
@@ -1907,6 +1934,8 @@ def estimate_sweep(
             for field in ["energy_pj_per_op", "latency_ns_per_op", "area_mm2_per_unit"]
         ):
             hardware_knobs["analog_periphery"] = periph.model_dump(mode="json")
+        if hardware.analog.delta_readout.draft.enabled or hardware.analog.delta_readout.verify.enabled:
+            hardware_knobs["delta_readout"] = hardware.analog.delta_readout.model_dump(mode="json")
 
     if hardware.memory is not None:
         hardware_knobs["memory"] = hardware.memory.model_dump(mode="json")

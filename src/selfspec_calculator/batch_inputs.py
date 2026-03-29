@@ -59,6 +59,24 @@ class SimulatorSweepInput(BaseModel):
         return int(value)
 
     @property
+    def draft_delta_readout(self) -> bool:
+        return bool(self.knobs.get("draft_delta_readout", False))
+
+    @property
+    def verify_delta_readout(self) -> bool:
+        return bool(self.knobs.get("verify_delta_readout", False))
+
+    @property
+    def draft_delta_dac_bits(self) -> int | None:
+        value = self.knobs.get("draft_delta_dac_bits")
+        return None if value is None else int(value)
+
+    @property
+    def verify_delta_dac_bits(self) -> int | None:
+        value = self.knobs.get("verify_delta_dac_bits")
+        return None if value is None else int(value)
+
+    @property
     def model_label(self) -> str:
         checkpoint_path = str(self.model.get("checkpoint_path", ""))
         if "Qwen3-0.6B" in checkpoint_path or "qwen0p6b" in checkpoint_path.lower():
@@ -104,12 +122,25 @@ class BatchSummary(BaseModel):
     rows: list[BatchSummaryRow]
 
 
-def _hardware_with_adc_override(template: HardwareConfig, *, draft_bits: int, verify_bits: int) -> HardwareConfig:
+def _hardware_with_adc_override(
+    template: HardwareConfig,
+    *,
+    draft_bits: int,
+    verify_bits: int,
+    draft_delta_readout: bool = False,
+    verify_delta_readout: bool = False,
+    draft_delta_dac_bits: int | None = None,
+    verify_delta_dac_bits: int | None = None,
+) -> HardwareConfig:
     hardware = template.model_copy(deep=True)
     if hardware.analog is None:
         raise ValueError("Batch runner requires knob-based analog hardware template")
     hardware.analog.adc.draft_bits = draft_bits
     hardware.analog.adc.residual_bits = verify_bits
+    hardware.analog.delta_readout.draft.enabled = draft_delta_readout
+    hardware.analog.delta_readout.verify.enabled = verify_delta_readout
+    hardware.analog.delta_readout.draft.dac_bits = draft_delta_dac_bits
+    hardware.analog.delta_readout.verify.dac_bits = verify_delta_dac_bits
     # Validate the override against library tables
     hardware.resolve_knob_specs()
     return hardware
@@ -150,6 +181,7 @@ def run_batch_inputs(
     output_dir: Path,
     hardware_template_path: Path,
     repo_root: Path,
+    force_verify_adc_bits: int | None = None,
 ) -> BatchSummary:
     template = HardwareConfig.from_yaml(hardware_template_path)
     rows: list[BatchSummaryRow] = []
@@ -159,10 +191,15 @@ def run_batch_inputs(
     for input_path in sorted(inputs_dir.glob("*.json")):
         sim_input = SimulatorSweepInput.from_path(input_path)
         model, model_rel_path = _model_from_label(repo_root, sim_input.model_label)
+        effective_verify_bits = force_verify_adc_bits or sim_input.verify_adc_bits
         hardware = _hardware_with_adc_override(
             template,
             draft_bits=sim_input.draft_adc_bits,
-            verify_bits=sim_input.verify_adc_bits,
+            verify_bits=effective_verify_bits,
+            draft_delta_readout=sim_input.draft_delta_readout,
+            verify_delta_readout=sim_input.verify_delta_readout,
+            draft_delta_dac_bits=sim_input.draft_delta_dac_bits,
+            verify_delta_dac_bits=sim_input.verify_delta_dac_bits,
         )
         sweep_input = sim_input.to_k_sweep_input()
         report = evaluate_k_sweep(
@@ -194,7 +231,7 @@ def run_batch_inputs(
                 BatchSummaryRow(
                     input_file=input_path.name,
                     model=sim_input.model_label,
-                    adc_bits=f"{sim_input.draft_adc_bits}/{sim_input.verify_adc_bits}",
+                    adc_bits=f"{sim_input.draft_adc_bits}/{effective_verify_bits}",
                     k=point.k,
                     acceptance_rate=(point.expected_accepted_tokens / point.k) if point.k > 0 else 0.0,
                     final_ppa=_final_ppa_string(
@@ -211,7 +248,7 @@ def run_batch_inputs(
             BatchSummaryRow(
                 input_file=input_path.name,
                 model=sim_input.model_label,
-                adc_bits=f"{sim_input.draft_adc_bits}/{sim_input.verify_adc_bits}",
+                adc_bits=f"{sim_input.draft_adc_bits}/{effective_verify_bits}",
                 k=best.k,
                 acceptance_rate=(best.expected_accepted_tokens / best.k) if best.k > 0 else 0.0,
                 final_ppa=_final_ppa_string(

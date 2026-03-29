@@ -57,6 +57,8 @@ def test_simulator_sweep_input_parses_properties(tmp_path: Path) -> None:
     assert parsed.prompt_length == 128
     assert parsed.draft_adc_bits == 8
     assert parsed.verify_adc_bits == 12
+    assert parsed.draft_delta_readout is False
+    assert parsed.verify_delta_readout is False
     assert parsed.to_k_sweep_input().candidates[1].expected_accepted_tokens == 4.9
 
 
@@ -92,6 +94,49 @@ def test_run_batch_inputs_writes_per_run_outputs_and_summary(tmp_path: Path) -> 
     best_md = (outputs_dir / "summary_best.md").read_text(encoding="utf-8")
     assert best_md.count("| Qwen3-0.6B | 8/12 |") == 1
 
+
+
+def test_simulator_sweep_input_parses_delta_knobs(tmp_path: Path) -> None:
+    path = tmp_path / "delta_input.json"
+    payload = {
+        "run_id": None,
+        "model": {
+            "checkpoint_path": "checkpoints/Qwen/Qwen3-1.7B/model_demo.pth",
+            "draft_checkpoint_path": "checkpoints/Qwen/Qwen3-1.7B/model_demo.pth",
+            "tokenizer_path": "checkpoints/Qwen/Qwen3-1.7B/tokenizer.json",
+        },
+        "dataset": {
+            "prompts_path": "out/demo_prompts.txt",
+            "prompt_field": "prompt",
+            "limit": 10,
+            "shuffle": False,
+            "loaded_prompts": 10,
+            "prompt_length": 64,
+        },
+        "knobs": {
+            "draft_adc_bits": 6,
+            "verify_adc_bits": 8,
+            "draft_delta_readout": True,
+            "verify_delta_readout": True,
+            "draft_delta_dac_bits": 8,
+            "verify_delta_dac_bits": 8,
+        },
+        "results_by_k": {
+            "2": {
+                "mean_accepted": 1.8,
+                "acceptance_ratio": 0.9,
+                "expected_committed_tokens_per_burst": 2.8,
+                "meta": {},
+            }
+        },
+    }
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    parsed = SimulatorSweepInput.from_path(path)
+    assert parsed.model_label == "Qwen3-1.7B"
+    assert parsed.draft_delta_readout is True
+    assert parsed.verify_delta_readout is True
+    assert parsed.draft_delta_dac_bits == 8
+    assert parsed.verify_delta_dac_bits == 8
 
 def test_batch_inputs_cli_runs(capsys, tmp_path: Path) -> None:
     repo_root = Path(__file__).resolve().parents[1]

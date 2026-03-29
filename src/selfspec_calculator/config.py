@@ -154,12 +154,29 @@ class AnalogPeripheryKnobs(BaseModel):
     write_drivers: PerOpOverheadSpec = Field(default_factory=PerOpOverheadSpec)
 
 
+class DeltaReadoutModeKnobs(BaseModel):
+    enabled: bool = False
+    dac_bits: int | None = Field(default=None, ge=1)
+
+
+class DeltaReadoutKnobs(BaseModel):
+    draft: DeltaReadoutModeKnobs = Field(default_factory=DeltaReadoutModeKnobs)
+    verify: DeltaReadoutModeKnobs = Field(default_factory=DeltaReadoutModeKnobs)
+
+    def effective_area_dac_bits(self, default_bits: int) -> int | None:
+        bits = [mode.dac_bits or default_bits for mode in [self.draft, self.verify] if mode.enabled]
+        if not bits:
+            return None
+        return max(bits)
+
+
 class AnalogKnobs(BaseModel):
     xbar_size: int = Field(..., ge=1)
     num_columns_per_adc: int = Field(..., ge=1)
     dac_bits: int = Field(..., ge=1)
     adc: AdcResolutionConfig
     periphery: AnalogPeripheryKnobs = Field(default_factory=AnalogPeripheryKnobs)
+    delta_readout: DeltaReadoutKnobs = Field(default_factory=DeltaReadoutKnobs)
 
     @model_validator(mode="after")
     def _validate_divisibility(self) -> "AnalogKnobs":
@@ -695,6 +712,14 @@ class HardwareConfig(BaseModel):
                 f"Requested analog.dac_bits={dac_bits} is not available in library '{library_name}'. "
                 f"Available DAC bits: {sorted(dac_table)}"
             )
+        for mode_name, mode in [("draft", self.analog.delta_readout.draft), ("verify", self.analog.delta_readout.verify)]:
+            if mode.enabled:
+                bits = mode.dac_bits or dac_bits
+                if bits not in dac_table:
+                    raise ValueError(
+                        f"Requested analog.delta_readout.{mode_name}.dac_bits={bits} is not available in library "
+                        f"'{library_name}'. Available DAC bits: {sorted(dac_table)}"
+                    )
 
         return ResolvedKnobSpecs(
             library=library_name,
@@ -721,6 +746,10 @@ class HardwareConfig(BaseModel):
             "digital": specs.digital.model_dump(mode="json"),
             "digital_feature_mapping": feature_mapping,
         }
+        if self.analog is not None and (
+            self.analog.delta_readout.draft.enabled or self.analog.delta_readout.verify.enabled
+        ):
+            payload["delta_readout"] = self.analog.delta_readout.model_dump(mode="json")
         lib = self.runtime_libraries().get(specs.library)
         if lib is not None:
             if "soc" in lib:
@@ -736,6 +765,25 @@ class HardwareConfig(BaseModel):
                     mode="json"
                 )
         return payload
+
+    def resolve_dac_spec_for_bits(self, bits: int) -> PeripheralSpec:
+        if self.mode != HardwareMode.knob_based:
+            raise ValueError("Cannot resolve DAC spec for legacy costs.* config")
+        library_name = self.selected_library
+        libraries = self.runtime_libraries()
+        lib = libraries.get(library_name)
+        if lib is None:
+            raise ValueError(
+                f"Unknown hardware library '{library_name}'. "
+                f"Available: {', '.join(sorted(libraries))}"
+            )
+        dac_table: dict[int, dict[str, Any]] = lib["dac"]
+        if bits not in dac_table:
+            raise ValueError(
+                f"Requested DAC bits={bits} is not available in library '{library_name}'. "
+                f"Available DAC bits: {sorted(dac_table)}"
+            )
+        return PeripheralSpec.model_validate(dac_table[bits])
 
     @classmethod
     def paper_library_extract(cls, name: str = "science_adi9405_2024") -> dict[str, Any]:

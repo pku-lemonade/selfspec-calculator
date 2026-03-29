@@ -287,6 +287,44 @@ def test_output_stream_periphery_latency_does_not_stack_when_adc_is_slower() -> 
     assert periph_breakdown.verify_bonus.latency_ns == pytest.approx(base_breakdown.verify_bonus.latency_ns)
 
 
+
+def test_delta_readout_adds_extra_dac_cost_and_area() -> None:
+    model = ModelConfig.model_validate(BASE_MODEL)
+    stats = SpeculationStats(k=1, histogram={0: 1.0})
+
+    hw_base = _base_knob_hardware(
+        analog={
+            "xbar_size": 128,
+            "num_columns_per_adc": 16,
+            "dac_bits": 4,
+            "adc": {"draft_bits": 4, "residual_bits": 12},
+        }
+    )
+    hw_delta = _base_knob_hardware(
+        analog={
+            "xbar_size": 128,
+            "num_columns_per_adc": 16,
+            "dac_bits": 4,
+            "adc": {"draft_bits": 4, "residual_bits": 12},
+            "delta_readout": {
+                "draft": {"enabled": True, "dac_bits": 8},
+                "verify": {"enabled": True, "dac_bits": 8},
+            },
+        }
+    )
+
+    _, b0 = estimate_point(model=model, hardware=hw_base, stats=stats, l_prompt=64)
+    _, b1 = estimate_point(model=model, hardware=hw_delta, stats=stats, l_prompt=64)
+
+    assert b0.draft.components is not None
+    assert b1.draft.components is not None
+    assert b1.draft.components.dac_energy_pj > b0.draft.components.dac_energy_pj
+    assert b1.verify_drafted.components.dac_energy_pj > b0.verify_drafted.components.dac_energy_pj
+
+    r0 = estimate_sweep(model=model, hardware=hw_base, stats=stats, prompt_lengths=[64]).model_dump(mode="json")
+    r1 = estimate_sweep(model=model, hardware=hw_delta, stats=stats, prompt_lengths=[64]).model_dump(mode="json")
+    assert r1["area_breakdown_mm2"]["on_chip_components"]["dac_mm2"] > r0["area_breakdown_mm2"]["on_chip_components"]["dac_mm2"]
+
 def test_memory_cost_uses_transfer_path_bottleneck_not_serial_sum() -> None:
     hardware = _base_knob_hardware(
         memory={

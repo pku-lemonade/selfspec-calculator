@@ -34,6 +34,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=Path("examples") / "hardware_soc_area.yaml",
         help="Hardware template YAML used for all runs before ADC-bit overrides (default: examples/hardware_soc_area.yaml)",
     )
+    parser.add_argument(
+        "--force-verify-adc-bits",
+        type=int,
+        default=None,
+        help="Override verify ADC bits for all runs (default: use input file value)",
+    )
     return parser
 
 
@@ -45,6 +51,7 @@ def main(argv: list[str] | None = None) -> int:
             output_dir=args.output_dir,
             hardware_template_path=args.hardware_template,
             repo_root=Path.cwd(),
+            force_verify_adc_bits=args.force_verify_adc_bits,
         )
     except Exception as exc:  # noqa: BLE001
         print(f"error: {exc}", file=sys.stderr)
