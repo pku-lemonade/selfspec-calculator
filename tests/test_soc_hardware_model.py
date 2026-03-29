@@ -6,6 +6,7 @@ from selfspec_calculator.config import HardwareConfig, ModelConfig
 from selfspec_calculator.estimator import (
     _max_layer_compute_latencies_ns_knob,
     _memory_cost_from_traffic,
+    _tile_counts,
     estimate_point,
     estimate_sweep,
 )
@@ -318,12 +319,36 @@ def test_delta_readout_adds_extra_dac_cost_and_area() -> None:
 
     assert b0.draft.components is not None
     assert b1.draft.components is not None
-    assert b1.draft.components.dac_energy_pj > b0.draft.components.dac_energy_pj
-    assert b1.verify_drafted.components.dac_energy_pj > b0.verify_drafted.components.dac_energy_pj
+    assert b0.draft.activation_counts is not None
+    assert b1.draft.activation_counts is not None
+    assert b0.verify_drafted.components is not None
+    assert b1.verify_drafted.components is not None
+    assert b0.verify_drafted.activation_counts is not None
+    assert b1.verify_drafted.activation_counts is not None
+
+    assert hw_delta.analog is not None
+    delta_spec = hw_delta.resolve_dac_spec_for_bits(8)
+    expected_draft_delta_energy = (
+        b1.draft.activation_counts.dac_conversions / float(hw_delta.analog.xbar_size)
+    ) * delta_spec.energy_pj_per_conversion
+    expected_verify_delta_energy = (
+        b1.verify_drafted.activation_counts.dac_conversions / float(hw_delta.analog.xbar_size)
+    ) * delta_spec.energy_pj_per_conversion
+
+    assert b1.draft.components.dac_energy_pj == pytest.approx(
+        b0.draft.components.dac_energy_pj + expected_draft_delta_energy
+    )
+    assert b1.verify_drafted.components.dac_energy_pj == pytest.approx(
+        b0.verify_drafted.components.dac_energy_pj + expected_verify_delta_energy
+    )
 
     r0 = estimate_sweep(model=model, hardware=hw_base, stats=stats, prompt_lengths=[64]).model_dump(mode="json")
     r1 = estimate_sweep(model=model, hardware=hw_delta, stats=stats, prompt_lengths=[64]).model_dump(mode="json")
-    assert r1["area_breakdown_mm2"]["on_chip_components"]["dac_mm2"] > r0["area_breakdown_mm2"]["on_chip_components"]["dac_mm2"]
+    logical_tiles = float(model.n_layers) * float(sum(_tile_counts(model, hw_delta.analog.xbar_size).values()))
+    expected_area_delta = logical_tiles * delta_spec.area_mm2_per_unit
+    assert r1["area_breakdown_mm2"]["on_chip_components"]["dac_mm2"] == pytest.approx(
+        r0["area_breakdown_mm2"]["on_chip_components"]["dac_mm2"] + expected_area_delta
+    )
 
 def test_memory_cost_uses_transfer_path_bottleneck_not_serial_sum() -> None:
     hardware = _base_knob_hardware(

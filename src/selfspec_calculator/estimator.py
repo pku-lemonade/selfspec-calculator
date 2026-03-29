@@ -626,7 +626,8 @@ def _area_breakdown_mm2(model: ModelConfig, hardware: HardwareConfig) -> AreaBre
         delta_area_bits = hardware.analog.delta_readout.effective_area_dac_bits(hardware.analog.dac_bits)
         if delta_area_bits is not None:
             delta_dac_spec = hardware.resolve_dac_spec_for_bits(delta_area_bits)
-            dac_mm2 += dac_units * delta_dac_spec.area_mm2_per_unit
+            # Delta readout adds one auxiliary DAC per logical tile, not a full xbar-wide DAC bank.
+            dac_mm2 += tiles_total_logical * delta_dac_spec.area_mm2_per_unit
         adc_draft_mm2 = adc_units_per_path * specs.adc_draft.area_mm2_per_unit
         adc_residual_mm2 = adc_units_per_path * specs.adc_residual.area_mm2_per_unit
 
@@ -1018,7 +1019,9 @@ def _add_knob_analog_stage(
     if delta_mode is not None and delta_mode.enabled:
         delta_bits = delta_mode.dac_bits or hardware.analog.dac_bits
         delta_dac_spec = hardware.resolve_dac_spec_for_bits(delta_bits)
-        delta_dac_energy = dac_conversions * delta_dac_spec.energy_pj_per_conversion
+        # Delta readout uses one auxiliary DAC per logical tile read, so dynamic DAC work
+        # scales with base_reads rather than the full xbar-wide DAC bank.
+        delta_dac_energy = base_reads * delta_dac_spec.energy_pj_per_conversion
         delta_dac_latency = base_reads * delta_dac_spec.latency_ns_per_conversion
     adc_draft_scan = (
         base_reads * adc_steps * specs.adc_draft.latency_ns_per_conversion if use_adc_draft else 0.0
