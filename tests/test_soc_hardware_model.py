@@ -247,9 +247,19 @@ def test_verify_reuse_buffers_add_exceeds_draft_when_final_add_is_needed() -> No
     num_slices = ceil(model.activation_bits / hardware.analog.dac_bits)
     tile_counts = {"qkv": 2, "wo": 1, "ffn": 4}
     total_stream_steps = sum(tile_count * num_slices * hardware.analog.num_columns_per_adc for tile_count in tile_counts.values())
-    expected_per_layer = total_stream_steps * max(
-        0.0,
-        2.0 * hardware.soc.buffers_add.latency_ns_per_op - specs.adc_residual.latency_ns_per_conversion,
+    output_tiles_per_layer = (
+        ceil((3 * model.d_model) / hardware.analog.xbar_size)
+        + ceil(model.d_model / hardware.analog.xbar_size)
+        + ceil(model.effective_d_ff / hardware.analog.xbar_size)
+        + ceil(model.d_model / hardware.analog.xbar_size)
+    )
+    final_add_steps = output_tiles_per_layer * hardware.analog.num_columns_per_adc
+    expected_per_layer = (
+        total_stream_steps * max(
+            0.0,
+            hardware.soc.buffers_add.latency_ns_per_op - specs.adc_residual.latency_ns_per_conversion,
+        )
+        + final_add_steps * hardware.soc.buffers_add.latency_ns_per_op
     )
     expected = model.n_layers * expected_per_layer
 

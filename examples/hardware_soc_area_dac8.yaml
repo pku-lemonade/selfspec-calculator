@@ -18,7 +18,8 @@ memory:
 
 analog:
   xbar_size: 128
-  num_columns_per_adc: 16
+  # Song/HyFlexPIM-style shared readout: one ADC per 128 columns.
+  num_columns_per_adc: 128
   dac_bits: 8
   adc:
     draft_bits: 4

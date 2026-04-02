@@ -626,11 +626,11 @@
       },
       "hbm": {
         "area_mm2": 5916.6,
-        "read_bandwidth_GBps": 0.8000400020001,
-        "read_energy_pj_per_byte": 1970.78125,
+        "read_bandwidth_GBps": 256.0,
+        "read_energy_pj_per_byte": 28.571428571428573,
         "read_latency_ns": 29.634600163,
-        "write_bandwidth_GBps": 0.8000400020001,
-        "write_energy_pj_per_byte": 1972.75,
+        "write_bandwidth_GBps": 256.0,
+        "write_energy_pj_per_byte": 28.571428571428573,
         "write_latency_ns": 29.634600163
       },
       "sram": {
@@ -646,9 +646,9 @@
     },
     "soc": {
       "buffers_add": {
-        "energy_pj_per_op": 7.8206,
-        "latency_ns_per_op": 4.0,
-        "area_mm2_per_unit": 0.005863
+        "energy_pj_per_op": 0.709,
+        "latency_ns_per_op": 2.0,
+        "area_mm2_per_unit": 0.000779
       },
       "control": {
         "energy_pj_per_token": 0.1178,
@@ -679,10 +679,10 @@
       "memory.sram.*": "cacti: ../cacti with reference/cacti/science_adi9405_v1_sram.cfg (cache type=ram, 2MiB, 64B block, 65nm); converted read/write nJ per access to pJ/byte by dividing by 64B; bandwidth from block_size/cycle_time; area from data-array area; capacity_bytes set to 2MiB for area-per-byte derivations (e.g., attention SRAM-CIM storage area)",
       "memory.fabric.*": "design-compiler: reference/final_ppa_summary.csv row memory_fabric_axi_dma; area_mm2 from Area(mm2), latency_ns from Delay(ns); energy_pj_per_byte from Energy(pJ/cycle)/(DATA_W/8) with DATA_W=256 from reference/dc_rtl/memory_fabric_axi_dma.v; bandwidth_GBps=(DATA_W/8)/Delay(ns)",
       "memory.hbm.area_mm2": "cacti-dram-proxy (8GiB profile): ../cacti with reference/cacti/science_adi9405_v1_dram.cfg (cache type=main memory, comm-dram cell, 2GiB proxy, 64B block, 65nm); area scaled 4x from 2GiB CACTI data-array area to represent 8GiB capacity",
-      "memory.hbm.read_energy_pj_per_byte": "cacti-dram-proxy (8GiB profile): ../cacti with reference/cacti/science_adi9405_v1_dram.cfg; converted read nJ/access to pJ/byte by dividing by 64B",
-      "memory.hbm.write_energy_pj_per_byte": "cacti-dram-proxy (8GiB profile): ../cacti with reference/cacti/science_adi9405_v1_dram.cfg; converted write nJ/access to pJ/byte by dividing by 64B",
-      "memory.hbm.read_bandwidth_GBps": "ramulator2 (HBM2): ../ramulator2/build/ramulator2 -f reference/ramulator2/hbm2_read.yaml; computed as total_num_read_requests * 16B / (memory_system_cycles * tCK_ns)",
-      "memory.hbm.write_bandwidth_GBps": "ramulator2 (HBM2): ../ramulator2/build/ramulator2 -f reference/ramulator2/hbm2_write.yaml; computed as total_num_write_requests * 16B / (memory_system_cycles * tCK_ns)",
+      "memory.hbm.read_energy_pj_per_byte": "science-paper assumption: reference/science.adi9405_sm.pdf comparison assumption 35 GB/s/W, converted as 1000/35 pJ per byte",
+      "memory.hbm.write_energy_pj_per_byte": "science-paper assumption: reference/science.adi9405_sm.pdf comparison assumption 35 GB/s/W, using the same per-byte energy prior for writes",
+      "memory.hbm.read_bandwidth_GBps": "ramulator2 (HBM2 config): derived from ../ramulator2/src/dram/impl/HBM2.cpp and reference/ramulator2/hbm2_read.yaml as channel_count(8) * pseudochannels_per_channel(2) * channel_width_bits(64)/8 * data_rate(2000 MT/s)/1000 = 256 GB/s peak",
+      "memory.hbm.write_bandwidth_GBps": "ramulator2 (HBM2 config): derived from ../ramulator2/src/dram/impl/HBM2.cpp and reference/ramulator2/hbm2_write.yaml using the same 256 GB/s peak interface bandwidth",
       "memory.hbm.read_latency_ns": "ramulator2 (HBM2): weighted average of avg_read_latency_0..7 from reference/ramulator2/hbm2_read.out.yaml multiplied by tCK=1ns",
       "memory.hbm.write_latency_ns": "ramulator2-derived assumption: set equal to read latency because Generic controller exports avg_read_latency only (no avg_write_latency stat)",
       "leakage_power.arrays_nw": "neurosim (65nm): analog-only share of chip leakage power from ../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM main output (reference/neurosim/science_adi9405_v1_neurosim_65nm_fill2.out.txt), allocated by area share",
@@ -692,18 +692,18 @@
       "leakage_power.hbm_nw": "cacti-dram-proxy (8GiB profile): ../cacti with reference/cacti/science_adi9405_v1_dram.cfg; uses 2GiB \"Total leakage power of a bank (mW)\" scaled by 4x for 8GiB then converted to nW",
       "digital.attention.*": "design-compiler: reference/final_ppa_summary.csv row attention_cim_mac; energy_pj_per_mac from Energy(pJ/cycle), latency_ns_per_mac from Delay(ns), assuming 1 op/cycle",
       "digital.softmax.*": "design-compiler: reference/final_ppa_summary.csv row softmax_unit; energy/latency mapped as per-op (1 op/cycle assumption)",
-      "digital.elementwise.*": "design-compiler: reference/final_ppa_summary.csv row ffn_elementwise_unit; quantize_dequantize is folded into soc.buffers_add.* in this schema",
+      "digital.elementwise.*": "design-compiler: reference/final_ppa_summary.csv row ffn_elementwise_unit; quantize_dequantize is not modeled as a standalone block in the current SRAM-CIM backend",
       "digital.kv_cache.*": "design-compiler: reference/final_ppa_summary.csv row kv_cache_datapath; energy/latency mapped as per-op (1 op/cycle assumption)",
       "digital.digital_overhead_area_mm2_per_layer": "design-compiler: sum of module areas in reference/final_ppa_summary.csv excluding attention_cim_mac (softmax, ffn_elementwise, kv_cache_datapath, quantize_dequantize, buffers_add, control_scheduler, verify_setup, dma_descriptor_setup)",
       "soc.attention_cim_mac_area_mm2_per_unit": "design-compiler: reference/final_ppa_summary.csv row attention_cim_mac Area(mm2)",
-      "soc.buffers_add.*": "design-compiler: reference/final_ppa_summary.csv; buffers_add_unit + quantize_dequantize_unit folded into soc.buffers_add energy/latency/area due schema (no separate quantize field)",
+      "soc.buffers_add.*": "design-compiler: reference/final_ppa_summary.csv row buffers_add_unit only; modeled as the post-ADC adder/accumulator rather than a folded buffer+quantize block",
       "soc.control.*": "design-compiler: reference/final_ppa_summary.csv; token terms from control_scheduler_unit, burst terms from dma_descriptor_setup_unit",
       "soc.verify_setup.*": "design-compiler: reference/final_ppa_summary.csv row verify_setup_unit mapped to per-burst setup energy/latency",
       "leakage_power.attention_engine_nw": "design-compiler: reference/final_ppa_summary.csv row attention_cim_mac Leakage(nW)",
       "leakage_power.softmax_unit_nw": "design-compiler: reference/final_ppa_summary.csv row softmax_unit Leakage(nW)",
       "leakage_power.elementwise_unit_nw": "design-compiler: reference/final_ppa_summary.csv row ffn_elementwise_unit Leakage(nW)",
       "leakage_power.kv_cache_nw": "design-compiler: reference/final_ppa_summary.csv row kv_cache_datapath Leakage(nW)",
-      "leakage_power.buffers_add_nw": "design-compiler: reference/final_ppa_summary.csv; buffers_add_unit + quantize_dequantize_unit leakage folded into buffers_add_nw",
+      "leakage_power.buffers_add_nw": "design-compiler: reference/final_ppa_summary.csv row buffers_add_unit only",
       "leakage_power.control_nw": "design-compiler: reference/final_ppa_summary.csv; control_scheduler_unit + verify_setup_unit + dma_descriptor_setup_unit leakage folded into control_nw",
       "leakage_power.dac_nw": "derived-neurosim-packed-dac: prior packed dac_nw minus restored mux_nw (mux kept as separate output-side routing block)",
       "leakage_power.io_buffers_nw": "absorbed-into-dac: set to 0.0 to avoid double counting with leakage_power.dac_nw",
@@ -762,14 +762,16 @@
       "ramulator2_hbm2_compat_notes": [
         "Patched ../ramulator2/src/dram_controller/impl/refresh/all_bank_refresh.cpp to tolerate DRAM models without rank level.",
         "Used OpenRowPolicy in HBM2 configs because ClosedRowPolicy requires rank and close-row request unsupported by HBM2 model in this repo.",
-        "HBM2/HBM3 models in this Ramulator2 revision do not expose DRAMPower energy statistics; HBM energy and leakage remain from CACTI proxy."
+        "HBM2/HBM3 models in this Ramulator2 revision do not expose DRAMPower energy statistics; HBM dynamic energy uses the paper's 35 GB/s/W assumption while leakage remains from the CACTI capacity proxy.",
+        "Do not derive HBM bandwidth from the tiny sequential test traces; use the configured HBM2 interface geometry and rate from the Ramulator2 model."
       ],
+      "ramulator2_hbm2_peak_bandwidth_GBps": 256.0,
       "leakage_derivation": "Schema stores leakage in nW. CACTI leakage converted from mW to nW. NeuroSim leakage (uW) converted to nW.",
       "dc_csv_used": "reference/final_ppa_summary.csv",
       "dc_mapping_assumptions": [
         "Energy(pJ/cycle) is mapped to per-op energy with 1 operation per cycle assumption.",
         "Delay(ns) is used as per-op latency proxy.",
-        "quantize_dequantize_unit is folded into soc.buffers_add.* because schema has no standalone quantize field.",
+        "quantize_dequantize_unit is not modeled as a standalone block in the current SRAM-CIM backend.",
         "verify_setup_unit leakage is folded into leakage_power.control_nw because schema has no standalone verify_setup leakage field.",
         "dma_descriptor_setup_unit is mapped to soc.control.*_per_burst; memory_fabric_axi_dma uses DATA_W=256 for per-byte and bandwidth conversion."
       ],

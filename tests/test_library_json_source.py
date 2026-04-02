@@ -133,3 +133,51 @@ def test_custom_library_missing_required_bit_entry_is_rejected(tmp_path: Path) -
 
     with pytest.raises(ValueError, match="Available ADC bits"):
         HardwareConfig.from_yaml(hw_path)
+
+
+def test_hyflexpim_song_example_library_loads_expected_anchors() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    hardware = HardwareConfig.from_yaml(repo_root / "examples" / "hardware_hyflexpim_song_2025.yaml")
+    specs = hardware.resolve_knob_specs()
+
+    assert hardware.selected_library == "song_analog_sramcim_2025_v1"
+    assert hardware.library_file == str((repo_root / "examples" / "library_hyflexpim_song_2025.json").resolve())
+    assert hardware.analog is not None
+    assert hardware.analog.num_columns_per_adc == 128
+    assert hardware.analog.delta_readout.draft.enabled is True
+    assert hardware.analog.delta_readout.verify.enabled is True
+
+    assert specs.array.area_mm2_per_array == pytest.approx(0.0001875)
+    assert specs.array.energy_pj_per_activation == pytest.approx(2.37421875)
+    assert specs.adc_draft.area_mm2_per_unit == pytest.approx(0.00017248425456334811)
+    assert specs.adc_draft.latency_ns_per_conversion == pytest.approx(0.665581869510665)
+    assert specs.adc_residual.area_mm2_per_unit == pytest.approx(0.0008886903249297807)
+    assert hardware.analog.periphery.tia.area_mm2_per_unit == pytest.approx(0.0)
+    assert hardware.soc.buffers_add.area_mm2_per_unit == pytest.approx(0.000779)
+    assert hardware.leakage_power.arrays_nw == pytest.approx(91.12174474446854)
+
+
+def test_song_analog_sramcim_library_supports_adc_bits_2_through_12(tmp_path: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    hw_path = tmp_path / "hardware_song_bits.yaml"
+    hw_path.write_text(
+        (
+            "reuse_policy: reuse\n"
+            "library: song_analog_sramcim_2025_v1\n"
+            f"library_file: {repo_root / 'examples' / 'library_hyflexpim_song_2025.json'}\n"
+            "analog:\n"
+            "  xbar_size: 128\n"
+            "  num_columns_per_adc: 128\n"
+            "  dac_bits: 8\n"
+            "  adc:\n"
+            "    draft_bits: 2\n"
+            "    residual_bits: 12\n"
+        ),
+        encoding="utf-8",
+    )
+
+    hardware = HardwareConfig.from_yaml(hw_path)
+    specs = hardware.resolve_knob_specs()
+
+    assert specs.adc_draft.energy_pj_per_conversion == pytest.approx(0.35293572269567586)
+    assert specs.adc_residual.energy_pj_per_conversion == pytest.approx(14.154340267046972)

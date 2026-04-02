@@ -1,0 +1,326 @@
+{
+  "song_analog_sramcim_2025_v1": {
+    "adc": {
+      "1": {
+        "energy_pj_per_conversion": 0.33960806025365997,
+        "latency_ns_per_conversion": 0.6494534746440885,
+        "area_mm2_per_unit": 6.368003786627109e-05
+      },
+      "2": {
+        "energy_pj_per_conversion": 0.35293572269567586,
+        "latency_ns_per_conversion": 0.6521371666880723,
+        "area_mm2_per_unit": 9.611290986624237e-05
+      },
+      "3": {
+        "energy_pj_per_conversion": 0.37179184462009046,
+        "latency_ns_per_conversion": 0.6568585196455211,
+        "area_mm2_per_unit": 0.0001300223374632741
+      },
+      "4": {
+        "energy_pj_per_conversion": 0.40143988691885923,
+        "latency_ns_per_conversion": 0.665581869510665,
+        "area_mm2_per_unit": 0.00017248425456334811
+      },
+      "5": {
+        "energy_pj_per_conversion": 0.4567068151701493,
+        "latency_ns_per_conversion": 0.6823663294440767,
+        "area_mm2_per_unit": 0.00023069623833571587
+      },
+      "6": {
+        "energy_pj_per_conversion": 0.565223149070823,
+        "latency_ns_per_conversion": 0.7154358680188502,
+        "area_mm2_per_unit": 0.0003199735544458971
+      },
+      "7": {
+        "energy_pj_per_conversion": 0.78125,
+        "latency_ns_per_conversion": 0.78125,
+        "area_mm2_per_unit": 0.0005859375
+      },
+      "8": {
+        "energy_pj_per_conversion": 1.2127984378792425,
+        "latency_ns_per_conversion": 0.9126868473310348,
+        "area_mm2_per_unit": 0.0008886903249297807
+      },
+      "9": {
+        "energy_pj_per_conversion": 2.0756456260769545,
+        "latency_ns_per_conversion": 1.1754524842173901,
+        "area_mm2_per_unit": 0.0017315771207626052
+      },
+      "10": {
+        "energy_pj_per_conversion": 3.801210447605939,
+        "latency_ns_per_conversion": 1.7009374475147943,
+        "area_mm2_per_unit": 0.0034466208595832107
+      },
+      "11": {
+        "energy_pj_per_conversion": 7.252281202088255,
+        "latency_ns_per_conversion": 2.7518765004594,
+        "area_mm2_per_unit": 0.007154097068574138
+      },
+      "12": {
+        "energy_pj_per_conversion": 14.154340267046972,
+        "latency_ns_per_conversion": 4.853739169523508,
+        "area_mm2_per_unit": 0.014470497397760169
+      },
+      "13": {
+        "energy_pj_per_conversion": 27.95864684040649,
+        "latency_ns_per_conversion": 9.057479944476826,
+        "area_mm2_per_unit": 0.02935121460307312
+      },
+      "14": {
+        "energy_pj_per_conversion": 55.56702443282293,
+        "latency_ns_per_conversion": 17.464915183908158,
+        "area_mm2_per_unit": 0.059608566289769904
+      },
+      "15": {
+        "energy_pj_per_conversion": 110.7837796176558,
+        "latency_ns_per_conversion": 34.27978566277082,
+        "area_mm2_per_unit": 0.12111502003311614
+      },
+      "16": {
+        "energy_pj_per_conversion": 221.21728998732152,
+        "latency_ns_per_conversion": 67.90952662049615,
+        "area_mm2_per_unit": 0.24611210171722686
+      }
+    },
+    "dac": {
+      "1": {
+        "energy_pj_per_conversion": 0.0908538818359375,
+        "latency_ns_per_conversion": 2.5,
+        "area_mm2_per_unit": 6.103515625e-07
+      },
+      "2": {
+        "energy_pj_per_conversion": 0.22499528319747075,
+        "latency_ns_per_conversion": 2.498971405226057,
+        "area_mm2_per_unit": 9.325999765289907e-07
+      },
+      "3": {
+        "energy_pj_per_conversion": 0.35896927175935284,
+        "latency_ns_per_conversion": 2.499014714479744,
+        "area_mm2_per_unit": 1.1576109870234686e-06
+      },
+      "4": {
+        "energy_pj_per_conversion": 0.49316673297949687,
+        "latency_ns_per_conversion": 2.4990580237333515,
+        "area_mm2_per_unit": 1.4670538963901717e-06
+      },
+      "5": {
+        "energy_pj_per_conversion": 0.6270289426135713,
+        "latency_ns_per_conversion": 2.4991013329870375,
+        "area_mm2_per_unit": 1.839820729911043e-06
+      },
+      "6": {
+        "energy_pj_per_conversion": 0.7599449504395416,
+        "latency_ns_per_conversion": 2.499144642240645,
+        "area_mm2_per_unit": 2.080029482202522e-06
+      },
+      "7": {
+        "energy_pj_per_conversion": 0.8941979603341754,
+        "latency_ns_per_conversion": 2.4991879514943323,
+        "area_mm2_per_unit": 2.398267381035082e-06
+      },
+      "8": {
+        "energy_pj_per_conversion": 1.0272266416601652,
+        "latency_ns_per_conversion": 2.4992312607478606,
+        "area_mm2_per_unit": 2.7200584556118485e-06
+      },
+      "9": {
+        "energy_pj_per_conversion": 1.162761104948973,
+        "latency_ns_per_conversion": 2.4992853973150346,
+        "area_mm2_per_unit": 3.3138609643886306e-06
+      },
+      "10": {
+        "energy_pj_per_conversion": 1.2971802922816322,
+        "latency_ns_per_conversion": 2.4991771241809375,
+        "area_mm2_per_unit": 3.6112723281660426e-06
+      },
+      "11": {
+        "energy_pj_per_conversion": 1.431599820403705,
+        "latency_ns_per_conversion": 2.4992420880613646,
+        "area_mm2_per_unit": 3.917267601662129e-06
+      },
+      "12": {
+        "energy_pj_per_conversion": 1.5660176019800311,
+        "latency_ns_per_conversion": 2.4992420880613326,
+        "area_mm2_per_unit": 4.11765264165221e-06
+      },
+      "13": {
+        "energy_pj_per_conversion": 1.7004940419342502,
+        "latency_ns_per_conversion": 2.499350361195398,
+        "area_mm2_per_unit": 4.3885031372427345e-06
+      },
+      "14": {
+        "energy_pj_per_conversion": 1.8349166797597265,
+        "latency_ns_per_conversion": 2.4993503611953685,
+        "area_mm2_per_unit": 4.5896621363058095e-06
+      },
+      "15": {
+        "energy_pj_per_conversion": 1.9693888172475935,
+        "latency_ns_per_conversion": 2.4993503611953365,
+        "area_mm2_per_unit": 4.906809456444603e-06
+      },
+      "16": {
+        "energy_pj_per_conversion": 2.097906298705123,
+        "latency_ns_per_conversion": 2.4994586343295597,
+        "area_mm2_per_unit": 5.111767890956928e-06
+      }
+    },
+    "array": {
+      "energy_pj_per_activation": 2.37421875,
+      "latency_ns_per_activation": 10.0,
+      "area_mm2_per_weight": 4.57763671875e-08,
+      "area_mm2_per_array": 0.0001875,
+      "arrays_per_weight": 4
+    },
+    "digital": {
+      "attention": {
+        "energy_pj_per_mac": 5.9854,
+        "latency_ns_per_mac": 2.08
+      },
+      "softmax": {
+        "energy_pj_per_mac": 3.4208,
+        "latency_ns_per_mac": 2.08
+      },
+      "elementwise": {
+        "energy_pj_per_mac": 3.6208,
+        "latency_ns_per_mac": 2.05
+      },
+      "kv_cache": {
+        "energy_pj_per_mac": 10.2172,
+        "latency_ns_per_mac": 2.13
+      },
+      "digital_overhead_area_mm2_per_layer": 0.022741
+    },
+    "memory": {
+      "sram": {
+        "read_energy_pj_per_byte": 16.65390625,
+        "write_energy_pj_per_byte": 18.19015625,
+        "read_bandwidth_GBps": 22.09227667815005,
+        "write_bandwidth_GBps": 22.09227667815005,
+        "read_latency_ns": 3.80895,
+        "write_latency_ns": 3.80895,
+        "area_mm2": 18.5478,
+        "capacity_bytes": 2097152
+      },
+      "hbm": {
+        "read_energy_pj_per_byte": 28.571428571428573,
+        "write_energy_pj_per_byte": 28.571428571428573,
+        "read_bandwidth_GBps": 256.0,
+        "write_bandwidth_GBps": 256.0,
+        "read_latency_ns": 29.634600163,
+        "write_latency_ns": 29.634600163,
+        "area_mm2": 5916.6
+      },
+      "fabric": {
+        "read_energy_pj_per_byte": 0.08246875,
+        "write_energy_pj_per_byte": 0.08246875,
+        "read_bandwidth_GBps": 16.0,
+        "write_bandwidth_GBps": 16.0,
+        "read_latency_ns": 2.0,
+        "write_latency_ns": 2.0,
+        "area_mm2": 0.01464
+      }
+    },
+    "analog_periphery": {
+      "tia": {
+        "energy_pj_per_op": 0.0,
+        "latency_ns_per_op": 0.0,
+        "area_mm2_per_unit": 0.0
+      },
+      "snh": {
+        "energy_pj_per_op": 1.8310546875000002e-08,
+        "latency_ns_per_op": 0.0,
+        "area_mm2_per_unit": 1.171875e-07
+      },
+      "mux": {
+        "energy_pj_per_op": 0.0,
+        "latency_ns_per_op": 0.0,
+        "area_mm2_per_unit": 0.0
+      },
+      "io_buffers": {
+        "energy_pj_per_op": 0.0,
+        "latency_ns_per_op": 0.0,
+        "area_mm2_per_unit": 0.0
+      },
+      "subarray_switches": {
+        "energy_pj_per_op": 0.0,
+        "latency_ns_per_op": 0.0,
+        "area_mm2_per_unit": 0.0
+      },
+      "write_drivers": {
+        "energy_pj_per_op": 0.0,
+        "latency_ns_per_op": 0.0,
+        "area_mm2_per_unit": 0.0
+      }
+    },
+    "soc": {
+      "buffers_add": {
+        "energy_pj_per_op": 0.709,
+        "latency_ns_per_op": 2.0,
+        "area_mm2_per_unit": 0.000779
+      },
+      "control": {
+        "energy_pj_per_token": 0.1178,
+        "latency_ns_per_token": 1.96,
+        "energy_pj_per_burst": 0.7604,
+        "latency_ns_per_burst": 1.85
+      },
+      "verify_setup": {
+        "energy_pj_per_burst": 0.1724,
+        "latency_ns_per_burst": 1.99
+      },
+      "attention_cim_mac_area_mm2_per_unit": 0.00428
+    },
+    "leakage_power": {
+      "arrays_nw": 91.12174474446854,
+      "dac_nw": 251.4134112694286,
+      "adc_draft_nw": 32.20902527793195,
+      "adc_residual_nw": 32.20902527793195,
+      "tia_nw": 3.915587264949687,
+      "snh_nw": 3.915587264949687,
+      "mux_nw": 7.486772072025123,
+      "io_buffers_nw": 0.0,
+      "subarray_switches_nw": 0.0,
+      "write_drivers_nw": 0.0,
+      "attention_engine_nw": 62.789,
+      "softmax_unit_nw": 40.4176,
+      "elementwise_unit_nw": 48.6942,
+      "kv_cache_nw": 109.9762,
+      "buffers_add_nw": 8.687,
+      "control_nw": 32.677099999999996,
+      "sram_nw": 2520840000.0,
+      "hbm_nw": 242635600.0,
+      "fabric_nw": 143.5084
+    },
+    "source_map": {
+      "adc.*": "Anchored to Song et al. ISCA 2025 Table 2 shared 7b ADC point (0.30 mm2, 512 units) and the paper's 100 ns / 128-column readout window. The remaining 1b-6b and 8b-16b points are rough estimates obtained by applying the original science_adi9405_v1_neurosim ADC scaling ratios to that 7b anchor.",
+      "dac.*": "Anchored to Song et al. ISCA 2025 Table 2 WL DRV total (0.02 mm2, 297.71 mW over 64x512 one-bit drivers). The remaining multi-bit DAC points are rough estimates obtained by applying the original science_adi9405_v1_neurosim DAC scaling ratios to that 1b anchor.",
+      "array.*": "Anchored to Song et al. ISCA 2025 Table 2 analog RRAM array total (0.048 mm2, 60.78 mW over 512 arrays of 64x128) and the 10 ns VMM statement in the paper text. The area/energy are scaled 2x to approximate a 128x128 estimator macro.",
+      "analog_periphery.snh.*": "Anchored to Song et al. ISCA 2025 Table 2 S&H total (6e-5 mm2, 12e-6 mW over 512 units).",
+      "analog_periphery.tia.*": "Set to 0.0 for this Song-analog/SRAM-CIM library because Song et al. ISCA 2025, ASADI, and ISAAC do not provide isolated TIA coefficients and we do not want inherited proxy values to dominate the readout path.",
+      "analog_periphery.mux.*": "Set to 0.0 for this Song-analog/SRAM-CIM library because Song et al. ISCA 2025, ASADI, and ISAAC do not provide isolated mux coefficients and we do not want inherited proxy values to dominate the readout path.",
+      "analog_periphery.io_buffers.*": "Kept from the original science_adi9405_v1_neurosim library.",
+      "analog_periphery.subarray_switches.*": "Kept from the original science_adi9405_v1_neurosim library.",
+      "analog_periphery.write_drivers.*": "Kept at the original zero default; WL driver effects are already absorbed into dac.* via the Song Table 2 anchor.",
+      "soc.buffers_add.*": "Kept from the original science_adi9405_v1_neurosim backend, but interpreted as the post-ADC adder only (reference/final_ppa_summary.csv row buffers_add_unit), not a folded buffer+quantize block.",
+      "digital.*": "Copied unchanged from the original science_adi9405_v1_neurosim library.",
+      "memory.*": "Copied unchanged from the original science_adi9405_v1_neurosim library.",
+      "leakage_power.*": "Copied from the original science_adi9405_v1_neurosim library, except buffers_add_nw now follows buffers_add_unit only."
+    },
+    "source_notes": {
+      "paper_refs": [
+        "reference/Song 等 - 2025 - Hybrid SLC-MLC RRAM Mixed-Signal Processing-in-Memory Architecture for Transformer Acceleration via.pdf",
+        "reference/Programming memristor arrays with arbitrarily high precision for analog computing  Science.pdf",
+        "reference/science.adi9405_sm.pdf"
+      ],
+      "library_construction": "Analog-only Song transplant on top of the original science_adi9405_v1_neurosim backend. The original digital, memory, control, and SRAM-CIM assumptions are preserved; only the analog ReRAM front-end is replaced with Song-anchored values.",
+      "song_table2_analog_cycle_ns": 100.0,
+      "song_table2_array_vmm_ns": 10.0,
+      "caveats": [
+        "This is not a full HyFlexPIM reproduction.",
+        "The estimator cannot represent Song's rectangular 64x128 analog array directly, so the array macro is approximated as a 128x128 macro by doubling the per-array area and energy anchors.",
+        "Song reports shared 6b/7b ADC hardware explicitly; the library uses the 7b point as the anchor and derives 1b-6b and 8b-16b by ratio-scaling from the original NeuroSim-based library.",
+        "The digital/non-stationary path remains SRAM-CIM / DC / CACTI based, following the original library rather than Song's digital-RRAM backend."
+      ]
+    }
+  }
+}

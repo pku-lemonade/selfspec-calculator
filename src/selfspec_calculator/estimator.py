@@ -862,6 +862,14 @@ def _analog_stage_shapes(model: ModelConfig) -> dict[str, list[tuple[int, int]]]
     }
 
 
+def _analog_stage_output_elements(model: ModelConfig) -> dict[str, int]:
+    return {stage: sum(m_out for m_out, _n_in in shapes) for stage, shapes in _analog_stage_shapes(model).items()}
+
+
+def _analog_stage_output_tiles(model: ModelConfig, xbar_size: int) -> dict[str, int]:
+    return {stage: sum(ceil(m_out / xbar_size) for m_out, _n_in in shapes) for stage, shapes in _analog_stage_shapes(model).items()}
+
+
 def _tile_counts(model: ModelConfig, xbar_size: int) -> dict[str, int]:
     out: dict[str, int] = {}
     for stage, shapes in _analog_stage_shapes(model).items():
@@ -1083,7 +1091,7 @@ def _add_knob_analog_stage(
         adc_residual_conversions=adc_residual_conversions,
     )
     return _AnalogStageStreamInfo(
-        outputs=dac_conversions,
+        outputs=adc_path_outputs,
         stream_steps=base_reads * float(adc_steps),
         output_stream_latency_ns=output_stream_latency,
     )
@@ -1121,6 +1129,8 @@ def _token_step_costs_knob(
         DPU_FEATURES if hardware.memory is None else tuple(feature for feature in DPU_FEATURES if feature != "kv_cache_update")
     )
     num_tiles = _tile_counts(model, hardware.analog.xbar_size)
+    output_tiles = _analog_stage_output_tiles(model, hardware.analog.xbar_size)
+    output_elements = _analog_stage_output_elements(model)
     num_slices = ceil(model.activation_bits / hardware.analog.dac_bits)
     buf_knobs = hardware.soc.buffers_add
 
@@ -1155,20 +1165,14 @@ def _token_step_costs_knob(
                 mode_name="verify_bonus",
             )
 
-            draft_multiplier = 0.0
-            if hardware.reuse_policy == ReusePolicy.reuse:
-                draft_multiplier += 1.0  # buffer D_reg / full outputs for reuse
-            if precision == PrecisionMode.full:
-                draft_multiplier += 1.0  # ADC-output combine
-            if draft_stream is not None and draft_multiplier > 0.0:
+            if draft_stream is not None:
                 _add_streamed_buffers_add(
                     acc=draft,
                     buf_knobs=buf_knobs,
                     outputs=draft_stream.outputs,
                     stream_steps=draft_stream.stream_steps,
-                    op_multiplier=draft_multiplier,
                     overlap_latency_ns=draft_stream.output_stream_latency_ns,
-                )
+                )  # per-sample accumulation into the output register
             if verify_full_stream is not None:
                 _add_streamed_buffers_add(
                     acc=verify_full,
@@ -1231,6 +1235,8 @@ def _verify_drafted_token_additional_stage_knob(
         DPU_FEATURES if hardware.memory is None else tuple(feature for feature in DPU_FEATURES if feature != "kv_cache_update")
     )
     num_tiles = _tile_counts(model, hardware.analog.xbar_size)
+    output_tiles = _analog_stage_output_tiles(model, hardware.analog.xbar_size)
+    output_elements = _analog_stage_output_elements(model)
     num_slices = ceil(model.activation_bits / hardware.analog.dac_bits)
     buf_knobs = hardware.soc.buffers_add
 
@@ -1239,13 +1245,7 @@ def _verify_drafted_token_additional_stage_knob(
     for layer in range(model.n_layers):
         policy = model.draft_policy.for_layer(layer)
         for stage, executed_precision in {"qkv": policy.qkv, "wo": policy.wo, "ffn": policy.ffn}.items():
-            if hardware.reuse_policy == ReusePolicy.reread:
-                mode_name = "verify_full"
-            else:
-                if executed_precision == PrecisionMode.full:
-                    mode_name = "none"
-                else:
-                    mode_name = "verify_residual_only"
+            mode_name = "none" if executed_precision == PrecisionMode.full else "verify_residual_only"
 
             verify_stream = _add_knob_analog_stage(
                 acc=additional,
@@ -1260,35 +1260,20 @@ def _verify_drafted_token_additional_stage_knob(
                 mode_name=mode_name,
             )
 
-            if hardware.reuse_policy == ReusePolicy.reread:
-                if verify_stream is not None:
-                    _add_streamed_buffers_add(
-                        acc=additional,
-                        buf_knobs=buf_knobs,
-                        outputs=verify_stream.outputs,
-                        stream_steps=verify_stream.stream_steps,
-                        overlap_latency_ns=verify_stream.output_stream_latency_ns,
-                    )  # ADC-output combine (re-read full)
-            else:
-                if executed_precision == PrecisionMode.full:
-                    outputs = float(num_tiles[stage] * num_slices * hardware.analog.xbar_size)
-                    stream_steps = float(num_tiles[stage] * num_slices * hardware.analog.num_columns_per_adc)
-                    _add_streamed_buffers_add(
-                        acc=additional,
-                        buf_knobs=buf_knobs,
-                        outputs=outputs,
-                        stream_steps=stream_steps,
-                    )  # buffer read of stored full outputs
-                else:
-                    if verify_stream is not None:
-                        _add_streamed_buffers_add(
-                            acc=additional,
-                            buf_knobs=buf_knobs,
-                            outputs=verify_stream.outputs,
-                            stream_steps=verify_stream.stream_steps,
-                            op_multiplier=2.0,
-                            overlap_latency_ns=verify_stream.output_stream_latency_ns,
-                        )  # buffer read + Final = D_reg + C
+            if executed_precision != PrecisionMode.full and verify_stream is not None:
+                _add_streamed_buffers_add(
+                    acc=additional,
+                    buf_knobs=buf_knobs,
+                    outputs=verify_stream.outputs,
+                    stream_steps=verify_stream.stream_steps,
+                    overlap_latency_ns=verify_stream.output_stream_latency_ns,
+                )  # streamed residual accumulation into the verify output register
+                _add_streamed_buffers_add(
+                    acc=additional,
+                    buf_knobs=buf_knobs,
+                    outputs=float(output_elements[stage]),
+                    stream_steps=float(output_tiles[stage] * hardware.analog.num_columns_per_adc),
+                )  # one final add of the stored draft result to the verify result
 
         for feature in enabled_dpu_features:
             e_per, t_per = dpu_feature_costs[feature]
@@ -1324,6 +1309,8 @@ def _max_layer_compute_latencies_ns_knob(
         DPU_FEATURES if hardware.memory is None else tuple(feature for feature in DPU_FEATURES if feature != "kv_cache_update")
     )
     num_tiles = _tile_counts(model, hardware.analog.xbar_size)
+    output_tiles = _analog_stage_output_tiles(model, hardware.analog.xbar_size)
+    output_elements = _analog_stage_output_elements(model)
     num_slices = ceil(model.activation_bits / hardware.analog.dac_bits)
     buf_knobs = hardware.soc.buffers_add
 
@@ -1359,13 +1346,7 @@ def _max_layer_compute_latencies_ns_knob(
                 mode_name="draft_full" if executed_precision == PrecisionMode.full else "draft_default",
             )
 
-            if hardware.reuse_policy == ReusePolicy.reread:
-                verify_mode_name = "verify_full"
-            else:
-                if executed_precision == PrecisionMode.full:
-                    verify_mode_name = "none"
-                else:
-                    verify_mode_name = "verify_residual_only"
+            verify_mode_name = "none" if executed_precision == PrecisionMode.full else "verify_residual_only"
             verify_drafted_stream = _add_knob_analog_stage(
                 acc=verify_drafted,
                 stage=stage,
@@ -1392,20 +1373,14 @@ def _max_layer_compute_latencies_ns_knob(
                 mode_name="verify_bonus",
             )
 
-            draft_multiplier = 0.0
-            if hardware.reuse_policy == ReusePolicy.reuse:
-                draft_multiplier += 1.0  # buffer D_reg / full outputs for reuse
-            if executed_precision == PrecisionMode.full:
-                draft_multiplier += 1.0  # ADC-output combine
-            if draft_stream is not None and draft_multiplier > 0.0:
+            if draft_stream is not None:
                 _add_streamed_buffers_add(
                     acc=draft,
                     buf_knobs=buf_knobs,
                     outputs=draft_stream.outputs,
                     stream_steps=draft_stream.stream_steps,
-                    op_multiplier=draft_multiplier,
                     overlap_latency_ns=draft_stream.output_stream_latency_ns,
-                )
+                )  # per-sample accumulation into the output register
             if verify_bonus_stream is not None:
                 _add_streamed_buffers_add(
                     acc=verify_bonus,
@@ -1415,35 +1390,20 @@ def _max_layer_compute_latencies_ns_knob(
                     overlap_latency_ns=verify_bonus_stream.output_stream_latency_ns,
                 )  # ADC-output combine (bonus token)
 
-            if hardware.reuse_policy == ReusePolicy.reread:
-                if verify_drafted_stream is not None:
-                    _add_streamed_buffers_add(
-                        acc=verify_drafted,
-                        buf_knobs=buf_knobs,
-                        outputs=verify_drafted_stream.outputs,
-                        stream_steps=verify_drafted_stream.stream_steps,
-                        overlap_latency_ns=verify_drafted_stream.output_stream_latency_ns,
-                    )  # ADC-output combine (re-read full)
-            else:
-                if executed_precision == PrecisionMode.full:
-                    outputs = float(num_tiles[stage] * num_slices * hardware.analog.xbar_size)
-                    stream_steps = float(num_tiles[stage] * num_slices * hardware.analog.num_columns_per_adc)
-                    _add_streamed_buffers_add(
-                        acc=verify_drafted,
-                        buf_knobs=buf_knobs,
-                        outputs=outputs,
-                        stream_steps=stream_steps,
-                    )  # buffer read of stored full outputs
-                else:
-                    if verify_drafted_stream is not None:
-                        _add_streamed_buffers_add(
-                            acc=verify_drafted,
-                            buf_knobs=buf_knobs,
-                            outputs=verify_drafted_stream.outputs,
-                            stream_steps=verify_drafted_stream.stream_steps,
-                            op_multiplier=2.0,
-                            overlap_latency_ns=verify_drafted_stream.output_stream_latency_ns,
-                        )  # buffer read + Final = D_reg + C
+            if executed_precision != PrecisionMode.full and verify_drafted_stream is not None:
+                _add_streamed_buffers_add(
+                    acc=verify_drafted,
+                    buf_knobs=buf_knobs,
+                    outputs=verify_drafted_stream.outputs,
+                    stream_steps=verify_drafted_stream.stream_steps,
+                    overlap_latency_ns=verify_drafted_stream.output_stream_latency_ns,
+                )  # streamed residual accumulation into the verify output register
+                _add_streamed_buffers_add(
+                    acc=verify_drafted,
+                    buf_knobs=buf_knobs,
+                    outputs=float(output_elements[stage]),
+                    stream_steps=float(output_tiles[stage] * hardware.analog.num_columns_per_adc),
+                )  # one final add of the stored draft result to the verify result
 
         for feature in enabled_dpu_features:
             e_per, t_per = dpu_feature_costs[feature]

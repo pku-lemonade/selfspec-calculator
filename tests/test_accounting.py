@@ -1,3 +1,5 @@
+from math import ceil
+
 import pytest
 
 from selfspec_calculator.config import HardwareConfig, ModelConfig
@@ -88,7 +90,7 @@ def test_dac_slicing_scales_analog_counts_and_dac_energy() -> None:
     assert sliced_components.dac_energy_pj > wide_components.dac_energy_pj
 
 
-def test_reuse_vs_reread_changes_verify_drafted_analog_work() -> None:
+def test_knob_verify_drafted_ignores_reuse_policy_and_keeps_residual_only_reads() -> None:
     model = ModelConfig.model_validate(BASE_MODEL)
     stats = SpeculationStats(k=1, histogram={0: 1.0})
 
@@ -112,9 +114,10 @@ def test_reuse_vs_reread_changes_verify_drafted_analog_work() -> None:
 
     assert reuse_counts.adc_draft_conversions == pytest.approx(0.0)
     assert reuse_counts.adc_residual_conversions > 0.0
-    assert reread_counts.adc_draft_conversions > 0.0
-    assert reread_counts.array_activations > reuse_counts.array_activations
-    assert reread_breakdown.verify_drafted.energy_pj > reuse_breakdown.verify_drafted.energy_pj
+    assert reread_counts.adc_draft_conversions == pytest.approx(0.0)
+    assert reread_counts.adc_residual_conversions == pytest.approx(reuse_counts.adc_residual_conversions)
+    assert reread_counts.array_activations == pytest.approx(reuse_counts.array_activations)
+    assert reread_breakdown.verify_drafted.energy_pj == pytest.approx(reuse_breakdown.verify_drafted.energy_pj)
 
 
 def test_reuse_with_full_precision_draft_has_zero_verify_analog_reads() -> None:
@@ -186,11 +189,10 @@ def test_split_adc_modes_use_shared_dac_across_active_arrays() -> None:
     reread_verify_counts = reread_breakdown.verify_drafted.activation_counts
     assert reread_verify_counts is not None
 
-    # Re-read verify for drafted tokens: full read (Arrays 1-4, both ADC paths).
-    assert reread_verify_counts.adc_draft_conversions > 0.0
-    assert reread_verify_counts.adc_residual_conversions > 0.0
-    assert reread_verify_counts.adc_draft_conversions == pytest.approx(reread_verify_counts.adc_residual_conversions)
-    assert reread_verify_counts.dac_conversions == pytest.approx(reread_verify_counts.adc_draft_conversions)
+    # Knob-based verify-drafted ignores reuse policy and always performs residual-only reads.
+    assert reread_verify_counts.adc_draft_conversions == pytest.approx(0.0)
+    assert reread_verify_counts.adc_residual_conversions == pytest.approx(reuse_verify_counts.adc_residual_conversions)
+    assert reread_verify_counts.dac_conversions == pytest.approx(reuse_verify_counts.dac_conversions)
 
 
 def test_legacy_buffers_add_latency_uses_incremental_overlap() -> None:

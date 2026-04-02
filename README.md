@@ -121,6 +121,7 @@ Examples:
 - `examples/hardware_analog_periphery.yaml` (non-zero analog periphery + buffers/control)
 - `examples/hardware_soc_area.yaml` (component area breakdown; off-chip HBM area reported separately)
 - `examples/hardware_science_adi9405_v1_neurosim.yaml` (most complete packaged Science / ADI9405 reference profile)
+- `examples/hardware_hyflexpim_song_2025.yaml` (Song-anchored analog ReRAM front-end on top of the original SRAM-CIM / digital backend)
 - `examples/hardware_custom_library.yaml` (custom JSON library source via `library_file`, including explicit `digital.features.*`)
 
 Validation rules:
