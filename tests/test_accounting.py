@@ -195,6 +195,44 @@ def test_split_adc_modes_use_shared_dac_across_active_arrays() -> None:
     assert reread_verify_counts.dac_conversions == pytest.approx(reuse_verify_counts.dac_conversions)
 
 
+def test_draft_activation_bit_override_reduces_draft_slices_only() -> None:
+    model = ModelConfig.model_validate(BASE_MODEL)
+    stats = SpeculationStats(k=1, histogram={0: 1.0})
+
+    base_hw = _knob_hardware(dac_bits=4)
+    low_draft_hw = HardwareConfig.model_validate(
+        {
+            "reuse_policy": "reuse",
+            "library": "puma_like_v1",
+            "analog": {
+                "xbar_size": 128,
+                "num_columns_per_adc": 16,
+                "dac_bits": 4,
+                "adc": {"draft_bits": 4, "residual_bits": 12},
+            },
+            "soc": {
+                "draft_activation_bits": 8,
+                "verify_activation_bits": 16,
+            },
+        }
+    )
+
+    _, base_breakdown = estimate_point(model=model, hardware=base_hw, stats=stats, l_prompt=64)
+    _, low_breakdown = estimate_point(model=model, hardware=low_draft_hw, stats=stats, l_prompt=64)
+
+    assert base_breakdown.draft.activation_counts is not None
+    assert low_breakdown.draft.activation_counts is not None
+    assert base_breakdown.verify_bonus.activation_counts is not None
+    assert low_breakdown.verify_bonus.activation_counts is not None
+
+    assert low_breakdown.draft.activation_counts.dac_conversions == pytest.approx(
+        base_breakdown.draft.activation_counts.dac_conversions * (2.0 / 3.0)
+    )
+    assert low_breakdown.verify_bonus.activation_counts.dac_conversions == pytest.approx(
+        base_breakdown.verify_bonus.activation_counts.dac_conversions * (4.0 / 3.0)
+    )
+
+
 def test_legacy_buffers_add_latency_uses_incremental_overlap() -> None:
     model = ModelConfig.model_validate(BASE_MODEL)
     stats = SpeculationStats(k=1, histogram={0: 1.0})

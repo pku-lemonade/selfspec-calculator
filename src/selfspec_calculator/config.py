@@ -241,6 +241,8 @@ class SocKnobs(BaseModel):
     attention_cim_units: int = Field(1, ge=1)
     attention_cim_mac_area_mm2_per_unit: float = Field(0.0, ge=0.0)
     attention_cim_storage_bits_per_element: int | None = Field(default=None, ge=1)
+    draft_activation_bits: int | None = Field(default=None, ge=1)
+    verify_activation_bits: int | None = Field(default=None, ge=1)
     verify_setup: VerifySetupKnobs = Field(default_factory=VerifySetupKnobs)
     buffers_add: PerOpOverheadSpec = Field(default_factory=PerOpOverheadSpec)
     control: ControlOverheadKnobs = Field(default_factory=ControlOverheadKnobs)
@@ -288,6 +290,8 @@ class MemoryLibraryDefaults(BaseModel):
 class SocLibraryDefaults(BaseModel):
     attention_cim_mac_area_mm2_per_unit: float = Field(0.0, ge=0.0)
     attention_cim_storage_bits_per_element: int | None = Field(default=None, ge=1)
+    draft_activation_bits: int | None = Field(default=None, ge=1)
+    verify_activation_bits: int | None = Field(default=None, ge=1)
     verify_setup: VerifySetupKnobs = Field(default_factory=VerifySetupKnobs)
     buffers_add: PerOpOverheadSpec = Field(default_factory=PerOpOverheadSpec)
     control: ControlOverheadKnobs = Field(default_factory=ControlOverheadKnobs)
@@ -624,6 +628,10 @@ class HardwareConfig(BaseModel):
             self.soc.attention_cim_mac_area_mm2_per_unit = soc_defaults.attention_cim_mac_area_mm2_per_unit
         if "attention_cim_storage_bits_per_element" not in self.soc.model_fields_set:
             self.soc.attention_cim_storage_bits_per_element = soc_defaults.attention_cim_storage_bits_per_element
+        if "draft_activation_bits" not in self.soc.model_fields_set:
+            self.soc.draft_activation_bits = soc_defaults.draft_activation_bits
+        if "verify_activation_bits" not in self.soc.model_fields_set:
+            self.soc.verify_activation_bits = soc_defaults.verify_activation_bits
         for field in ["energy_pj_per_burst", "latency_ns_per_burst"]:
             if field not in self.soc.verify_setup.model_fields_set:
                 setattr(self.soc.verify_setup, field, getattr(soc_defaults.verify_setup, field))

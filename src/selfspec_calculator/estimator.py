@@ -870,6 +870,14 @@ def _analog_stage_output_tiles(model: ModelConfig, xbar_size: int) -> dict[str, 
     return {stage: sum(ceil(m_out / xbar_size) for m_out, _n_in in shapes) for stage, shapes in _analog_stage_shapes(model).items()}
 
 
+def _draft_activation_bits(model: ModelConfig, hardware: HardwareConfig) -> int:
+    return int(hardware.soc.draft_activation_bits or model.activation_bits)
+
+
+def _verify_activation_bits(model: ModelConfig, hardware: HardwareConfig) -> int:
+    return int(hardware.soc.verify_activation_bits or model.activation_bits)
+
+
 def _tile_counts(model: ModelConfig, xbar_size: int) -> dict[str, int]:
     out: dict[str, int] = {}
     for stage, shapes in _analog_stage_shapes(model).items():
@@ -1131,7 +1139,8 @@ def _token_step_costs_knob(
     num_tiles = _tile_counts(model, hardware.analog.xbar_size)
     output_tiles = _analog_stage_output_tiles(model, hardware.analog.xbar_size)
     output_elements = _analog_stage_output_elements(model)
-    num_slices = ceil(model.activation_bits / hardware.analog.dac_bits)
+    draft_num_slices = ceil(_draft_activation_bits(model, hardware) / hardware.analog.dac_bits)
+    verify_num_slices = ceil(_verify_activation_bits(model, hardware) / hardware.analog.dac_bits)
     buf_knobs = hardware.soc.buffers_add
 
     draft = _TokenAccumulator()
@@ -1144,7 +1153,7 @@ def _token_step_costs_knob(
                 acc=draft,
                 stage=stage,
                 num_tiles=num_tiles[stage],
-                num_slices=num_slices,
+                num_slices=verify_num_slices if precision == PrecisionMode.full else draft_num_slices,
                 xbar_size=hardware.analog.xbar_size,
                 adc_steps=hardware.analog.num_columns_per_adc,
                 specs=specs,
@@ -1156,7 +1165,7 @@ def _token_step_costs_knob(
                 acc=verify_full,
                 stage=stage,
                 num_tiles=num_tiles[stage],
-                num_slices=num_slices,
+                num_slices=verify_num_slices,
                 xbar_size=hardware.analog.xbar_size,
                 adc_steps=hardware.analog.num_columns_per_adc,
                 specs=specs,
@@ -1237,7 +1246,7 @@ def _verify_drafted_token_additional_stage_knob(
     num_tiles = _tile_counts(model, hardware.analog.xbar_size)
     output_tiles = _analog_stage_output_tiles(model, hardware.analog.xbar_size)
     output_elements = _analog_stage_output_elements(model)
-    num_slices = ceil(model.activation_bits / hardware.analog.dac_bits)
+    verify_num_slices = ceil(_verify_activation_bits(model, hardware) / hardware.analog.dac_bits)
     buf_knobs = hardware.soc.buffers_add
 
     additional = _TokenAccumulator()
@@ -1251,7 +1260,7 @@ def _verify_drafted_token_additional_stage_knob(
                 acc=additional,
                 stage=stage,
                 num_tiles=num_tiles[stage],
-                num_slices=num_slices,
+                num_slices=verify_num_slices,
                 xbar_size=hardware.analog.xbar_size,
                 adc_steps=hardware.analog.num_columns_per_adc,
                 specs=specs,
@@ -1311,7 +1320,8 @@ def _max_layer_compute_latencies_ns_knob(
     num_tiles = _tile_counts(model, hardware.analog.xbar_size)
     output_tiles = _analog_stage_output_tiles(model, hardware.analog.xbar_size)
     output_elements = _analog_stage_output_elements(model)
-    num_slices = ceil(model.activation_bits / hardware.analog.dac_bits)
+    draft_num_slices = ceil(_draft_activation_bits(model, hardware) / hardware.analog.dac_bits)
+    verify_num_slices = ceil(_verify_activation_bits(model, hardware) / hardware.analog.dac_bits)
     buf_knobs = hardware.soc.buffers_add
 
     ctrl_e_tok = hardware.soc.control.energy_pj_per_token
@@ -1337,7 +1347,7 @@ def _max_layer_compute_latencies_ns_knob(
                 acc=draft,
                 stage=stage,
                 num_tiles=num_tiles[stage],
-                num_slices=num_slices,
+                num_slices=verify_num_slices if executed_precision == PrecisionMode.full else draft_num_slices,
                 xbar_size=hardware.analog.xbar_size,
                 adc_steps=hardware.analog.num_columns_per_adc,
                 specs=specs,
@@ -1351,7 +1361,7 @@ def _max_layer_compute_latencies_ns_knob(
                 acc=verify_drafted,
                 stage=stage,
                 num_tiles=num_tiles[stage],
-                num_slices=num_slices,
+                num_slices=verify_num_slices,
                 xbar_size=hardware.analog.xbar_size,
                 adc_steps=hardware.analog.num_columns_per_adc,
                 specs=specs,
@@ -1364,7 +1374,7 @@ def _max_layer_compute_latencies_ns_knob(
                 acc=verify_bonus,
                 stage=stage,
                 num_tiles=num_tiles[stage],
-                num_slices=num_slices,
+                num_slices=verify_num_slices,
                 xbar_size=hardware.analog.xbar_size,
                 adc_steps=hardware.analog.num_columns_per_adc,
                 specs=specs,

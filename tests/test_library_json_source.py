@@ -146,6 +146,8 @@ def test_hyflexpim_song_example_library_loads_expected_anchors() -> None:
     assert hardware.analog.num_columns_per_adc == 128
     assert hardware.analog.delta_readout.draft.enabled is True
     assert hardware.analog.delta_readout.verify.enabled is True
+    assert hardware.soc.draft_activation_bits == 8
+    assert hardware.soc.verify_activation_bits == 16
 
     assert specs.array.area_mm2_per_array == pytest.approx(0.0001875)
     assert specs.array.energy_pj_per_activation == pytest.approx(2.37421875)

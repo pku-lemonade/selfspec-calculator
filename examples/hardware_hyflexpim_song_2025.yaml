@@ -4,6 +4,8 @@ library_file: library_hyflexpim_song_2025.json
 
 soc:
   schedule: layer-pipelined
+  draft_activation_bits: 8
+  verify_activation_bits: 16
 
 memory:
   kv_cache:
