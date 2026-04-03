@@ -95,6 +95,8 @@ class AreaComponentsMm2(BaseModel):
     attention_cim_sram_mm2: float = Field(0.0, ge=0.0)
     attention_cim_mac_mm2: float = Field(0.0, ge=0.0)
 
+    input_registers_mm2: float = Field(0.0, ge=0.0)
+    output_registers_mm2: float = Field(0.0, ge=0.0)
     tia_mm2: float = Field(0.0, ge=0.0)
     snh_mm2: float = Field(0.0, ge=0.0)
     mux_mm2: float = Field(0.0, ge=0.0)
@@ -122,6 +124,10 @@ class ComponentBreakdown(BaseModel):
     adc_draft_latency_ns: float = 0.0
     adc_residual_energy_pj: float = 0.0
     adc_residual_latency_ns: float = 0.0
+    input_registers_energy_pj: float = 0.0
+    input_registers_latency_ns: float = 0.0
+    output_registers_energy_pj: float = 0.0
+    output_registers_latency_ns: float = 0.0
     tia_energy_pj: float = 0.0
     tia_latency_ns: float = 0.0
     snh_energy_pj: float = 0.0
@@ -165,6 +171,8 @@ class ComponentBreakdown(BaseModel):
             "dac": "dac",
             "adc_draft": "adc_draft",
             "adc_residual": "adc_residual",
+            "input_registers": "input_registers",
+            "output_registers": "output_registers",
             "tia": "tia",
             "snh": "snh",
             "mux": "mux",

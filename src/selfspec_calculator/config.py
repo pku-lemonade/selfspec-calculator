@@ -182,6 +182,8 @@ class BuffersAddSpec(PerOpOverheadSpec):
 
 
 class AnalogPeripheryKnobs(BaseModel):
+    input_registers: PerOpOverheadSpec = Field(default_factory=PerOpOverheadSpec)
+    output_registers: PerOpOverheadSpec = Field(default_factory=PerOpOverheadSpec)
     tia: PerOpOverheadSpec = Field(default_factory=PerOpOverheadSpec)
     snh: PerOpOverheadSpec = Field(default_factory=PerOpOverheadSpec)
     mux: PerOpOverheadSpec = Field(default_factory=PerOpOverheadSpec)
@@ -273,6 +275,8 @@ class ComponentLeakagePowerKnobs(BaseModel):
     dac_nw: float = Field(0.0, ge=0.0)
     adc_draft_nw: float = Field(0.0, ge=0.0)
     adc_residual_nw: float = Field(0.0, ge=0.0)
+    input_registers_nw: float = Field(0.0, ge=0.0)
+    output_registers_nw: float = Field(0.0, ge=0.0)
     tia_nw: float = Field(0.0, ge=0.0)
     snh_nw: float = Field(0.0, ge=0.0)
     mux_nw: float = Field(0.0, ge=0.0)
@@ -704,7 +708,16 @@ class HardwareConfig(BaseModel):
 
         assert self.analog is not None
         periphery_defaults = AnalogPeripheryKnobs.model_validate(lib.get("analog_periphery", {}))
-        for name in ["tia", "snh", "mux", "io_buffers", "subarray_switches", "write_drivers"]:
+        for name in [
+            "input_registers",
+            "output_registers",
+            "tia",
+            "snh",
+            "mux",
+            "io_buffers",
+            "subarray_switches",
+            "write_drivers",
+        ]:
             cur_spec = getattr(self.analog.periphery, name)
             def_spec = getattr(periphery_defaults, name)
             for field in ["energy_pj_per_op", "latency_ns_per_op", "area_mm2_per_unit"]:

@@ -154,12 +154,17 @@ def test_hyflexpim_song_example_library_loads_expected_anchors() -> None:
 
     assert specs.array.area_mm2_per_array == pytest.approx(0.0001875)
     assert specs.array.energy_pj_per_activation == pytest.approx(2.37421875)
-    assert specs.adc_draft.area_mm2_per_unit == pytest.approx(0.00017248425456334811)
-    assert specs.adc_draft.latency_ns_per_conversion == pytest.approx(0.665581869510665)
+    assert specs.adc_draft.area_mm2_per_unit == pytest.approx(0.00023069623833571587)
+    assert specs.adc_draft.latency_ns_per_conversion == pytest.approx(0.6823663294440767)
     assert specs.adc_residual.area_mm2_per_unit == pytest.approx(0.0034466208595832107)
+    assert hardware.analog.periphery.input_registers.energy_pj_per_op == pytest.approx(0.000396728515625)
+    assert hardware.analog.periphery.output_registers.energy_pj_per_op == pytest.approx(0.0008087158203125)
+    assert hardware.analog.periphery.input_registers.area_mm2_per_unit == pytest.approx(2.5390625e-06)
+    assert hardware.analog.periphery.output_registers.area_mm2_per_unit == pytest.approx(5.0390625e-06)
     assert hardware.analog.periphery.tia.area_mm2_per_unit == pytest.approx(0.0)
     assert hardware.soc.buffers_add.area_mm2_per_unit == pytest.approx(0.000779)
     assert hardware.leakage_power.arrays_nw == pytest.approx(91.12174474446854)
+    assert hardware.leakage_power.input_registers_nw == pytest.approx(0.0)
 
 
 def test_song_analog_sramcim_library_supports_adc_bits_2_through_12(tmp_path: Path) -> None:

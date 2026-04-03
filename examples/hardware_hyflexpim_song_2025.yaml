@@ -24,7 +24,7 @@ analog:
     num_columns_per_adc:
       draft: 16
       residual: 32
-    draft_bits: 4
+    draft_bits: 5
     residual_bits: 10
   delta_readout:
     draft:

@@ -83,6 +83,8 @@ def test_backward_compatible_defaults_keep_new_fields_zero_or_null() -> None:
     assert breakdown.total.stages.control_energy_pj == pytest.approx(0.0)
 
     assert breakdown.total.components is not None
+    assert breakdown.total.components.input_registers_energy_pj == pytest.approx(0.0)
+    assert breakdown.total.components.output_registers_energy_pj == pytest.approx(0.0)
     assert breakdown.total.components.tia_energy_pj == pytest.approx(0.0)
     assert breakdown.total.components.sram_energy_pj == pytest.approx(0.0)
     assert breakdown.total.components.hbm_energy_pj == pytest.approx(0.0)
@@ -195,7 +197,11 @@ def test_nonzero_periphery_buffers_control_increase_totals() -> None:
             "num_columns_per_adc": 16,
             "dac_bits": 4,
             "adc": {"draft_bits": 4, "residual_bits": 12},
-            "periphery": {"tia": {"energy_pj_per_op": 0.001, "latency_ns_per_op": 0.002}},
+            "periphery": {
+                "input_registers": {"energy_pj_per_op": 0.001},
+                "output_registers": {"energy_pj_per_op": 0.002},
+                "tia": {"energy_pj_per_op": 0.001, "latency_ns_per_op": 0.002},
+            },
         },
     )
 
@@ -204,6 +210,10 @@ def test_nonzero_periphery_buffers_control_increase_totals() -> None:
 
     assert b0.total.components is not None
     assert b1.total.components is not None
+    assert b0.total.components.input_registers_energy_pj == pytest.approx(0.0)
+    assert b0.total.components.output_registers_energy_pj == pytest.approx(0.0)
+    assert b1.total.components.input_registers_energy_pj > 0.0
+    assert b1.total.components.output_registers_energy_pj > 0.0
     assert b0.total.components.tia_energy_pj == pytest.approx(0.0)
     assert b1.total.components.tia_energy_pj > 0.0
     assert b1.total.stages.buffers_add_energy_pj > 0.0

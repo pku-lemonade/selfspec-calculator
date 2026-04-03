@@ -59,6 +59,8 @@ def test_knob_report_includes_stage_component_and_library_metadata() -> None:
         assert "arrays_energy_pj" in components
         assert "dac_energy_pj" in components
         assert "adc_draft_latency_ns" in components
+        assert "input_registers_energy_pj" in components
+        assert "output_registers_energy_pj" in components
         assert "attention_engine_energy_pj" in components
 
         counts = phase_payload["activation_counts"]
@@ -212,7 +214,11 @@ def test_area_breakdown_reports_memory_and_periphery_area_and_excludes_hbm_from_
             "num_columns_per_adc": 16,
             "dac_bits": 4,
             "adc": {"draft_bits": 4, "residual_bits": 12},
-            "periphery": {"tia": {"area_mm2_per_unit": 0.001}},
+            "periphery": {
+                "input_registers": {"area_mm2_per_unit": 0.002},
+                "output_registers": {"area_mm2_per_unit": 0.003},
+                "tia": {"area_mm2_per_unit": 0.001},
+            },
         },
         "memory": {
             "sram": {"area_mm2": 2.0},
@@ -227,6 +233,8 @@ def test_area_breakdown_reports_memory_and_periphery_area_and_excludes_hbm_from_
     assert a0["off_chip_hbm_mm2"] == 10.0
     assert a0["on_chip_components"]["sram_mm2"] == 2.0
     assert a0["on_chip_components"]["fabric_mm2"] == 1.0
+    assert a0["on_chip_components"]["input_registers_mm2"] > 0.0
+    assert a0["on_chip_components"]["output_registers_mm2"] > 0.0
     assert a0["on_chip_components"]["tia_mm2"] > 0.0
 
     hw1 = HardwareConfig.model_validate(

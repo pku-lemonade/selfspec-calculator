@@ -106,6 +106,8 @@ analog:
   periphery:
     # Optional override fields (otherwise resolved from library, if available).
     # Any field provided here overrides the library (including explicit `0.0`).
+    input_registers: {}
+    output_registers: {}
     tia: {}
     snh: {}
     mux: {}
@@ -157,8 +159,8 @@ Keep existing `costs.*` format (see `examples/hardware_legacy.yaml`).
 
 The JSON report includes:
 - stage-level breakdown (`qkv`, `wo`, `ffn`, `qk`, `pv`, `softmax`, `elementwise`, `kv_cache`),
-- component-level breakdown (`arrays`, `dac`, `adc_draft`, `adc_residual`, attention/digital components),
-- optional SoC components (`buffers_add`, `control`, and analog periphery blocks),
+- component-level breakdown (`arrays`, `dac`, `adc_draft`, `adc_residual`, register/periphery, attention/digital components),
+- optional SoC components (`buffers_add`, `control`, and analog periphery blocks such as input/output registers, S&H, mux, and IO buffers),
 - optional memory components (`sram`, `hbm`, `fabric`) and `memory_traffic` bytes,
 - DPU feature subtotals per phase (`dpu_features`) with independent latency/energy for:
   - attention (`attention_qk`, `attention_softmax`, `attention_pv`)

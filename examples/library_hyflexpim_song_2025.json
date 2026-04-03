@@ -221,6 +221,16 @@
       }
     },
     "analog_periphery": {
+      "input_registers": {
+        "energy_pj_per_op": 0.000396728515625,
+        "latency_ns_per_op": 0.0,
+        "area_mm2_per_unit": 2.5390625e-06
+      },
+      "output_registers": {
+        "energy_pj_per_op": 0.0008087158203125,
+        "latency_ns_per_op": 0.0,
+        "area_mm2_per_unit": 5.0390625e-06
+      },
       "tia": {
         "energy_pj_per_op": 0.0,
         "latency_ns_per_op": 0.0,
@@ -281,6 +291,8 @@
       "dac_nw": 251.4134112694286,
       "adc_draft_nw": 32.20902527793195,
       "adc_residual_nw": 32.20902527793195,
+      "input_registers_nw": 0.0,
+      "output_registers_nw": 0.0,
       "tia_nw": 3.915587264949687,
       "snh_nw": 3.915587264949687,
       "mux_nw": 7.486772072025123,
@@ -301,6 +313,8 @@
       "adc.*": "Anchored to Song et al. ISCA 2025 Table 2 shared 7b ADC point (0.30 mm2, 512 units) and the paper's 100 ns / 128-column readout window. The remaining 1b-6b and 8b-16b points are rough estimates obtained by applying the original science_adi9405_v1_neurosim ADC scaling ratios to that 7b anchor.",
       "dac.*": "Anchored to Song et al. ISCA 2025 Table 2 WL DRV total (0.02 mm2, 297.71 mW over 64x512 one-bit drivers). The remaining multi-bit DAC points are rough estimates obtained by applying the original science_adi9405_v1_neurosim DAC scaling ratios to that 1b anchor.",
       "array.*": "Anchored to Song et al. ISCA 2025 Table 2 analog RRAM array total (0.048 mm2, 60.78 mW over 512 arrays of 64x128) and the 10 ns VMM statement in the paper text. The area/energy are scaled 2x to approximate a 128x128 estimator macro.",
+      "analog_periphery.input_registers.*": "Anchored to Song et al. ISCA 2025 Table 2 analog IR total (0.00065 mm2, 0.13 mW over 512 units, 64B each). The estimator collapses two Song 64x128 units into one 128x128 analog unit, so this maps to 256 estimator units with 128B IR each. Dynamic energy is normalized per IR byte over the paper's 100 ns analog cycle. The paper does not publish isolated IR delay, so latency is kept at 0.0.",
+      "analog_periphery.output_registers.*": "Anchored to Song et al. ISCA 2025 Table 2 analog OR total (0.00129 mm2, 0.53 mW over 512 units, 128B each). The estimator collapses two Song 64x128 units into one 128x128 analog unit, so this maps to 256 estimator units with 256B OR each. Dynamic energy is normalized per OR byte over the paper's 100 ns analog cycle. The paper does not publish isolated OR delay, so latency is kept at 0.0.",
       "analog_periphery.snh.*": "Anchored to Song et al. ISCA 2025 Table 2 S&H total (6e-5 mm2, 12e-6 mW over 512 units).",
       "analog_periphery.tia.*": "Set to 0.0 for this Song-analog/SRAM-CIM library because Song et al. ISCA 2025, ASADI, and ISAAC do not provide isolated TIA coefficients and we do not want inherited proxy values to dominate the readout path.",
       "analog_periphery.mux.*": "Set to 0.0 for this Song-analog/SRAM-CIM library because Song et al. ISCA 2025, ASADI, and ISAAC do not provide isolated mux coefficients and we do not want inherited proxy values to dominate the readout path.",

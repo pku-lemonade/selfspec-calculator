@@ -218,8 +218,9 @@ def _knob_output_stream_latency_ns(
     snh_latency: float,
     mux_latency: float,
     io_latency: float,
+    output_register_latency: float,
 ) -> float:
-    return max(adc_latency, tia_latency, snh_latency, mux_latency, io_latency)
+    return max(adc_latency, tia_latency, snh_latency, mux_latency, io_latency, output_register_latency)
 
 
 def _buffers_add_knobs_for_phase(*, hardware: HardwareConfig, phase: str):
@@ -609,6 +610,8 @@ def _area_breakdown_mm2(model: ModelConfig, hardware: HardwareConfig) -> AreaBre
     attention_cim_sram_mm2 = 0.0
     attention_cim_mac_mm2 = 0.0
 
+    input_registers_mm2 = 0.0
+    output_registers_mm2 = 0.0
     tia_mm2 = 0.0
     snh_mm2 = 0.0
     mux_mm2 = 0.0
@@ -643,6 +646,8 @@ def _area_breakdown_mm2(model: ModelConfig, hardware: HardwareConfig) -> AreaBre
 
         periph = hardware.analog.periphery
         adc_total_units = adc_draft_units + adc_residual_units
+        input_registers_mm2 = tiles_total_physical * periph.input_registers.area_mm2_per_unit
+        output_registers_mm2 = tiles_total_physical * periph.output_registers.area_mm2_per_unit
         tia_mm2 = adc_total_units * periph.tia.area_mm2_per_unit
         snh_mm2 = adc_total_units * periph.snh.area_mm2_per_unit
         mux_mm2 = adc_total_units * periph.mux.area_mm2_per_unit
@@ -670,6 +675,8 @@ def _area_breakdown_mm2(model: ModelConfig, hardware: HardwareConfig) -> AreaBre
         adc_residual_mm2=adc_residual_mm2,
         attention_cim_sram_mm2=attention_cim_sram_mm2,
         attention_cim_mac_mm2=attention_cim_mac_mm2,
+        input_registers_mm2=input_registers_mm2,
+        output_registers_mm2=output_registers_mm2,
         tia_mm2=tia_mm2,
         snh_mm2=snh_mm2,
         mux_mm2=mux_mm2,
@@ -1081,10 +1088,26 @@ def _add_knob_analog_stage(
 
     # Optional analog periphery (TIA, SNH, muxing, buffering, switches, drivers).
     adc_path_outputs = adc_draft_conversions + adc_residual_conversions
+    input_register_ops = array_activations * xbar_size
+    # The Song profile is approximated as a 128x128 estimator macro formed from two
+    # 64x128 analog units, so one output register instance holds 256 B rather than 128 B.
+    output_register_ops = array_activations * (2.0 * xbar_size)
 
     def periph_energy_latency(spec, *, energy_ops: float, latency_ops: float) -> tuple[float, float]:  # noqa: ANN001
         return (energy_ops * spec.energy_pj_per_op, latency_ops * spec.latency_ns_per_op)
 
+    input_register_latency_per_execution = float(active_arrays * xbar_size) * periphery.input_registers.latency_ns_per_op
+    output_register_latency_per_execution = float(active_arrays * (2 * xbar_size)) * periphery.output_registers.latency_ns_per_op
+    input_register_e, input_register_t = periph_energy_latency(
+        periphery.input_registers,
+        energy_ops=input_register_ops,
+        latency_ops=input_register_ops,
+    )
+    output_register_e, output_register_t = periph_energy_latency(
+        periphery.output_registers,
+        energy_ops=output_register_ops,
+        latency_ops=output_register_ops,
+    )
     tia_latency_per_execution = adc_latency_per_execution * periphery.tia.latency_ns_per_op
     snh_latency_per_execution = adc_latency_per_execution * periphery.snh.latency_ns_per_op
     mux_latency_per_execution = adc_latency_per_execution * periphery.mux.latency_ns_per_op
@@ -1107,6 +1130,7 @@ def _add_knob_analog_stage(
         snh_latency=snh_latency_per_execution,
         mux_latency=mux_latency_per_execution,
         io_latency=io_latency_per_execution,
+        output_register_latency=output_register_latency_per_execution,
     )
 
     dac_energy_total = dac_energy + delta_dac_energy
@@ -1114,10 +1138,11 @@ def _add_knob_analog_stage(
     dac_path_latency = base_reads * dac_path_latency_per_execution
 
     stage_energy = array_energy + dac_energy_total + adc_draft_energy + adc_residual_energy
-    stage_energy += tia_e + snh_e + mux_e + io_e + sw_e + wd_e
+    stage_energy += input_register_e + output_register_e + tia_e + snh_e + mux_e + io_e + sw_e + wd_e
     stage_latency, steady_state_latency = _pipelined_latency_for_repeated_executions(
         executions=base_reads,
         component_latencies_ns=[
+            input_register_latency_per_execution,
             dac_path_latency_per_execution,
             array_latency_per_execution,
             output_stream_latency_per_execution,
@@ -1131,6 +1156,8 @@ def _add_knob_analog_stage(
     acc.add_component("dac", dac_energy_total, dac_path_latency)
     acc.add_component("adc_draft", adc_draft_energy, adc_draft_latency)
     acc.add_component("adc_residual", adc_residual_energy, adc_residual_latency)
+    acc.add_component("input_registers", input_register_e, input_register_t)
+    acc.add_component("output_registers", output_register_e, output_register_t)
     acc.add_component("tia", tia_e, tia_t)
     acc.add_component("snh", snh_e, snh_t)
     acc.add_component("mux", mux_e, mux_t)
