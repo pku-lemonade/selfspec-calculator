@@ -1,9 +1,10 @@
-reuse_policy: reuse
+reuse_policy: reread
 library: song_analog_sramcim_2025_v1
 library_file: library_hyflexpim_song_2025.json
 
 soc:
   schedule: layer-pipelined
+  attention_cim_units: 128
   draft_activation_bits: 8
   verify_activation_bits: 16
 
@@ -20,8 +21,11 @@ analog:
   num_columns_per_adc: 128
   dac_bits: 8
   adc:
+    num_columns_per_adc:
+      draft: 16
+      residual: 32
     draft_bits: 4
-    residual_bits: 8
+    residual_bits: 10
   delta_readout:
     draft:
       enabled: true

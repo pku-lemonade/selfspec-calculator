@@ -223,10 +223,15 @@ def test_draft_buffers_add_latency_uses_stream_overlap() -> None:
     specs = hardware.resolve_knob_specs()
     num_slices = ceil(model.activation_bits / hardware.analog.dac_bits)
     tile_counts = {"qkv": 2, "wo": 1, "ffn": 4}
-    total_stream_steps = sum(tile_count * num_slices * hardware.analog.num_columns_per_adc for tile_count in tile_counts.values())
-    expected_per_layer = total_stream_steps * max(
-        0.0,
-        hardware.soc.buffers_add.latency_ns_per_op - specs.adc_draft.latency_ns_per_conversion,
+    draft_exec_latency = float(hardware.analog.draft_num_columns_per_adc) * hardware.soc.buffers_add.latency_ns_per_op
+    draft_bottleneck = max(
+        specs.array.latency_ns_per_activation,
+        specs.dac.latency_ns_per_conversion,
+        float(hardware.analog.draft_num_columns_per_adc) * specs.adc_draft.latency_ns_per_conversion,
+    )
+    expected_per_layer = sum(
+        draft_exec_latency + max(0.0, (tile_count * num_slices - 1) * (draft_exec_latency - draft_bottleneck))
+        for tile_count in tile_counts.values()
     )
     expected = model.n_layers * expected_per_layer
 
@@ -246,21 +251,23 @@ def test_verify_reuse_buffers_add_exceeds_draft_when_final_add_is_needed() -> No
     specs = hardware.resolve_knob_specs()
     num_slices = ceil(model.activation_bits / hardware.analog.dac_bits)
     tile_counts = {"qkv": 2, "wo": 1, "ffn": 4}
-    total_stream_steps = sum(tile_count * num_slices * hardware.analog.num_columns_per_adc for tile_count in tile_counts.values())
+    verify_exec_latency = float(hardware.analog.residual_num_columns_per_adc) * hardware.soc.buffers_add.latency_ns_per_op
+    verify_bottleneck = max(
+        specs.array.latency_ns_per_activation,
+        specs.dac.latency_ns_per_conversion,
+        float(hardware.analog.residual_num_columns_per_adc) * specs.adc_residual.latency_ns_per_conversion,
+    )
     output_tiles_per_layer = (
         ceil((3 * model.d_model) / hardware.analog.xbar_size)
         + ceil(model.d_model / hardware.analog.xbar_size)
         + ceil(model.effective_d_ff / hardware.analog.xbar_size)
         + ceil(model.d_model / hardware.analog.xbar_size)
     )
-    final_add_steps = output_tiles_per_layer * hardware.analog.num_columns_per_adc
-    expected_per_layer = (
-        total_stream_steps * max(
-            0.0,
-            hardware.soc.buffers_add.latency_ns_per_op - specs.adc_residual.latency_ns_per_conversion,
-        )
-        + final_add_steps * hardware.soc.buffers_add.latency_ns_per_op
-    )
+    final_add_steps = output_tiles_per_layer * hardware.analog.residual_num_columns_per_adc
+    expected_per_layer = sum(
+        verify_exec_latency + max(0.0, (tile_count * num_slices - 1) * (verify_exec_latency - verify_bottleneck))
+        for tile_count in tile_counts.values()
+    ) + final_add_steps * hardware.soc.buffers_add.latency_ns_per_op
     expected = model.n_layers * expected_per_layer
 
     assert breakdown.draft.components is not None

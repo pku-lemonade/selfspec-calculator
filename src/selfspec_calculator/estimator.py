@@ -221,6 +221,11 @@ def _knob_output_stream_latency_ns(
 ) -> float:
     return max(adc_latency, tia_latency, snh_latency, mux_latency, io_latency)
 
+
+def _buffers_add_knobs_for_phase(*, hardware: HardwareConfig, phase: str):
+    return hardware.soc.buffers_add.for_phase(phase)
+
+
 def _kv_memory_traffic_by_phase(
     *,
     model: ModelConfig,
@@ -620,7 +625,12 @@ def _area_breakdown_mm2(model: ModelConfig, hardware: HardwareConfig) -> AreaBre
         tiles_total_physical = tiles_total_logical * float(specs.array.arrays_per_weight)
 
         dac_units = tiles_total_logical * float(hardware.analog.xbar_size)
-        adc_units_per_path = tiles_total_logical * float(hardware.analog.xbar_size // hardware.analog.num_columns_per_adc)
+        adc_draft_units = tiles_total_logical * float(
+            hardware.analog.xbar_size // hardware.analog.draft_num_columns_per_adc
+        )
+        adc_residual_units = tiles_total_logical * float(
+            hardware.analog.xbar_size // hardware.analog.residual_num_columns_per_adc
+        )
 
         dac_mm2 = dac_units * specs.dac.area_mm2_per_unit
         delta_area_bits = hardware.analog.delta_readout.effective_area_dac_bits(hardware.analog.dac_bits)
@@ -628,11 +638,11 @@ def _area_breakdown_mm2(model: ModelConfig, hardware: HardwareConfig) -> AreaBre
             delta_dac_spec = hardware.resolve_dac_spec_for_bits(delta_area_bits)
             # Delta readout adds one auxiliary DAC per logical tile, not a full xbar-wide DAC bank.
             dac_mm2 += tiles_total_logical * delta_dac_spec.area_mm2_per_unit
-        adc_draft_mm2 = adc_units_per_path * specs.adc_draft.area_mm2_per_unit
-        adc_residual_mm2 = adc_units_per_path * specs.adc_residual.area_mm2_per_unit
+        adc_draft_mm2 = adc_draft_units * specs.adc_draft.area_mm2_per_unit
+        adc_residual_mm2 = adc_residual_units * specs.adc_residual.area_mm2_per_unit
 
         periph = hardware.analog.periphery
-        adc_total_units = 2.0 * adc_units_per_path
+        adc_total_units = adc_draft_units + adc_residual_units
         tia_mm2 = adc_total_units * periph.tia.area_mm2_per_unit
         snh_mm2 = adc_total_units * periph.snh.area_mm2_per_unit
         mux_mm2 = adc_total_units * periph.mux.area_mm2_per_unit
@@ -687,7 +697,8 @@ def _token_step_costs_legacy(model: ModelConfig, hardware: HardwareConfig, l_pro
         DPU_FEATURES if hardware.memory is None else tuple(feature for feature in DPU_FEATURES if feature != "kv_cache_update")
     )
     analog_outputs = {s: sum(m_out for m_out, _n_in in shapes) for s, shapes in _analog_stage_shapes(model).items()}
-    buf_knobs = hardware.soc.buffers_add
+    draft_buf_knobs = _buffers_add_knobs_for_phase(hardware=hardware, phase="draft")
+    verify_buf_knobs = _buffers_add_knobs_for_phase(hardware=hardware, phase="verify")
 
     draft = _TokenAccumulator()
     verify_full = _TokenAccumulator()
@@ -716,7 +727,7 @@ def _token_step_costs_legacy(model: ModelConfig, hardware: HardwareConfig, l_pro
                 energy, latency = _legacy_buffers_add_overlap_latency(
                     analog_latency_ns=draft_latency,
                     outputs=outputs,
-                    buf_knobs=buf_knobs,
+                    buf_knobs=draft_buf_knobs,
                 )
                 draft.add_stage("buffers_add", energy, latency)
                 draft.add_component("buffers_add", energy, latency)
@@ -724,7 +735,7 @@ def _token_step_costs_legacy(model: ModelConfig, hardware: HardwareConfig, l_pro
                 energy, latency = _legacy_buffers_add_overlap_latency(
                     analog_latency_ns=draft_latency,
                     outputs=outputs,
-                    buf_knobs=buf_knobs,
+                    buf_knobs=draft_buf_knobs,
                 )
                 draft.add_stage("buffers_add", energy, latency)
                 draft.add_component("buffers_add", energy, latency)
@@ -732,7 +743,7 @@ def _token_step_costs_legacy(model: ModelConfig, hardware: HardwareConfig, l_pro
             bonus_energy, bonus_latency = _legacy_buffers_add_overlap_latency(
                 analog_latency_ns=full_latency,
                 outputs=outputs,
-                buf_knobs=buf_knobs,
+                buf_knobs=verify_buf_knobs,
             )
             verify_full.add_stage("buffers_add", bonus_energy, bonus_latency)
             verify_full.add_component("buffers_add", bonus_energy, bonus_latency)
@@ -787,7 +798,7 @@ def _verify_drafted_token_additional_stage_legacy(
         DPU_FEATURES if hardware.memory is None else tuple(feature for feature in DPU_FEATURES if feature != "kv_cache_update")
     )
     analog_outputs = {s: sum(m_out for m_out, _n_in in shapes) for s, shapes in _analog_stage_shapes(model).items()}
-    buf_knobs = hardware.soc.buffers_add
+    verify_buf_knobs = _buffers_add_knobs_for_phase(hardware=hardware, phase="verify")
 
     additional = _TokenAccumulator()
 
@@ -805,7 +816,7 @@ def _verify_drafted_token_additional_stage_legacy(
                 energy, latency = _legacy_buffers_add_overlap_latency(
                     analog_latency_ns=analog_latency,
                     outputs=outputs,
-                    buf_knobs=buf_knobs,
+                    buf_knobs=verify_buf_knobs,
                 )
                 additional.add_stage("buffers_add", energy, latency)
                 additional.add_component("buffers_add", energy, latency)
@@ -814,7 +825,7 @@ def _verify_drafted_token_additional_stage_legacy(
                     energy, latency = _legacy_buffers_add_overlap_latency(
                         analog_latency_ns=0.0,
                         outputs=outputs,
-                        buf_knobs=buf_knobs,
+                        buf_knobs=verify_buf_knobs,
                     )
                     additional.add_stage("buffers_add", energy, latency)
                     additional.add_component("buffers_add", energy, latency)
@@ -822,7 +833,7 @@ def _verify_drafted_token_additional_stage_legacy(
                     energy, latency = _legacy_buffers_add_overlap_latency(
                         analog_latency_ns=analog_latency,
                         outputs=outputs,
-                        buf_knobs=buf_knobs,
+                        buf_knobs=verify_buf_knobs,
                         op_multiplier=2.0,
                     )
                     additional.add_stage("buffers_add", energy, latency)
@@ -966,8 +977,19 @@ class _TokenAccumulator:
 @dataclass(frozen=True)
 class _AnalogStageStreamInfo:
     outputs: float
-    stream_steps: float
-    output_stream_latency_ns: float
+    executions: float
+    stream_steps_per_execution: float
+    steady_state_latency_ns: float
+
+
+def _pipelined_latency_for_repeated_executions(*, executions: float, component_latencies_ns: list[float]) -> tuple[float, float]:
+    if executions <= 0.0:
+        return (0.0, 0.0)
+    first_pass = sum(component_latencies_ns)
+    steady_state = max(component_latencies_ns, default=0.0)
+    if executions <= 1.0:
+        return (first_pass, steady_state)
+    return (first_pass + (executions - 1.0) * steady_state, steady_state)
 
 
 def _add_streamed_buffers_add(
@@ -975,18 +997,23 @@ def _add_streamed_buffers_add(
     acc: _TokenAccumulator,
     buf_knobs,  # noqa: ANN001
     outputs: float,
-    stream_steps: float,
+    executions: float,
+    stream_steps_per_execution: float,
     op_multiplier: float = 1.0,
-    overlap_latency_ns: float | None = None,
+    overlap_steady_state_ns: float | None = None,
 ) -> None:
-    if outputs <= 0.0 or op_multiplier <= 0.0:
+    if outputs <= 0.0 or op_multiplier <= 0.0 or executions <= 0.0:
         return
 
     raw_energy = outputs * op_multiplier * buf_knobs.energy_pj_per_op
-    raw_latency = stream_steps * op_multiplier * buf_knobs.latency_ns_per_op
+    per_execution_latency = stream_steps_per_execution * op_multiplier * buf_knobs.latency_ns_per_op
+    raw_latency = executions * per_execution_latency
     charged_latency = raw_latency
-    if overlap_latency_ns is not None:
-        charged_latency = max(0.0, raw_latency - overlap_latency_ns)
+    if overlap_steady_state_ns is not None:
+        charged_latency = per_execution_latency + max(
+            0.0,
+            (executions - 1.0) * (per_execution_latency - overlap_steady_state_ns),
+        )
 
     acc.add_stage("buffers_add", raw_energy, charged_latency)
     acc.add_component("buffers_add", raw_energy, charged_latency)
@@ -999,7 +1026,6 @@ def _add_knob_analog_stage(
     num_tiles: int,
     num_slices: int,
     xbar_size: int,
-    adc_steps: int,
     specs: ResolvedKnobSpecs,
     periphery: Any,  # AnalogPeripheryKnobs
     hardware: HardwareConfig,
@@ -1022,10 +1048,11 @@ def _add_knob_analog_stage(
     adc_draft_energy = adc_draft_conversions * specs.adc_draft.energy_pj_per_conversion
     adc_residual_energy = adc_residual_conversions * specs.adc_residual.energy_pj_per_conversion
 
-    array_latency = base_reads * specs.array.latency_ns_per_activation
-    dac_latency = base_reads * specs.dac.latency_ns_per_conversion
+    array_latency_per_execution = specs.array.latency_ns_per_activation
+    array_latency = base_reads * array_latency_per_execution
+    dac_latency_per_execution = specs.dac.latency_ns_per_conversion
     delta_dac_energy = 0.0
-    delta_dac_latency = 0.0
+    delta_dac_latency_per_execution = 0.0
     assert hardware.analog is not None
     delta_mode = None
     if mode_name.startswith('draft'):
@@ -1038,48 +1065,66 @@ def _add_knob_analog_stage(
         # Delta readout uses one auxiliary DAC per logical tile read, so dynamic DAC work
         # scales with base_reads rather than the full xbar-wide DAC bank.
         delta_dac_energy = base_reads * delta_dac_spec.energy_pj_per_conversion
-        delta_dac_latency = base_reads * delta_dac_spec.latency_ns_per_conversion
-    adc_draft_scan = (
-        base_reads * adc_steps * specs.adc_draft.latency_ns_per_conversion if use_adc_draft else 0.0
+        delta_dac_latency_per_execution = delta_dac_spec.latency_ns_per_conversion
+    adc_draft_steps = hardware.analog.draft_num_columns_per_adc if use_adc_draft else 0
+    adc_residual_steps = hardware.analog.residual_num_columns_per_adc if use_adc_residual else 0
+    adc_draft_scan_per_execution = adc_draft_steps * specs.adc_draft.latency_ns_per_conversion if use_adc_draft else 0.0
+    adc_residual_scan_per_execution = (
+        adc_residual_steps * specs.adc_residual.latency_ns_per_conversion if use_adc_residual else 0.0
     )
-    adc_residual_scan = (
-        base_reads * adc_steps * specs.adc_residual.latency_ns_per_conversion if use_adc_residual else 0.0
+    adc_draft_latency_per_execution, adc_residual_latency_per_execution, adc_latency_per_execution = _parallel_latency_split(
+        adc_draft_scan_per_execution,
+        adc_residual_scan_per_execution,
     )
-    adc_draft_latency, adc_residual_latency, adc_latency = _parallel_latency_split(adc_draft_scan, adc_residual_scan)
+    adc_draft_latency = base_reads * adc_draft_latency_per_execution
+    adc_residual_latency = base_reads * adc_residual_latency_per_execution
 
     # Optional analog periphery (TIA, SNH, muxing, buffering, switches, drivers).
     adc_path_outputs = adc_draft_conversions + adc_residual_conversions
-    _, _, adc_scan_latency_steps = _parallel_latency_split(adc_draft_scan, adc_residual_scan)
 
     def periph_energy_latency(spec, *, energy_ops: float, latency_ops: float) -> tuple[float, float]:  # noqa: ANN001
         return (energy_ops * spec.energy_pj_per_op, latency_ops * spec.latency_ns_per_op)
 
-    tia_e, tia_t = periph_energy_latency(periphery.tia, energy_ops=adc_path_outputs, latency_ops=adc_scan_latency_steps)
-    snh_e, snh_t = periph_energy_latency(periphery.snh, energy_ops=adc_path_outputs, latency_ops=adc_scan_latency_steps)
-    mux_e, mux_t = periph_energy_latency(periphery.mux, energy_ops=adc_path_outputs, latency_ops=adc_scan_latency_steps)
+    tia_latency_per_execution = adc_latency_per_execution * periphery.tia.latency_ns_per_op
+    snh_latency_per_execution = adc_latency_per_execution * periphery.snh.latency_ns_per_op
+    mux_latency_per_execution = adc_latency_per_execution * periphery.mux.latency_ns_per_op
+    io_latency_per_execution = adc_latency_per_execution * periphery.io_buffers.latency_ns_per_op
+    tia_e, tia_t = periph_energy_latency(periphery.tia, energy_ops=adc_path_outputs, latency_ops=base_reads * adc_latency_per_execution)
+    snh_e, snh_t = periph_energy_latency(periphery.snh, energy_ops=adc_path_outputs, latency_ops=base_reads * adc_latency_per_execution)
+    mux_e, mux_t = periph_energy_latency(periphery.mux, energy_ops=adc_path_outputs, latency_ops=base_reads * adc_latency_per_execution)
     io_e, io_t = periph_energy_latency(
         periphery.io_buffers,
         energy_ops=adc_path_outputs,
-        latency_ops=adc_scan_latency_steps,
+        latency_ops=base_reads * adc_latency_per_execution,
     )
+    sw_latency_per_execution = periphery.subarray_switches.latency_ns_per_op
+    wd_latency_per_execution = periphery.write_drivers.latency_ns_per_op
     sw_e, sw_t = periph_energy_latency(periphery.subarray_switches, energy_ops=array_activations, latency_ops=base_reads)
     wd_e, wd_t = periph_energy_latency(periphery.write_drivers, energy_ops=dac_conversions, latency_ops=base_reads)
-    output_stream_latency = _knob_output_stream_latency_ns(
-        adc_latency=adc_latency,
-        tia_latency=tia_t,
-        snh_latency=snh_t,
-        mux_latency=mux_t,
-        io_latency=io_t,
+    output_stream_latency_per_execution = _knob_output_stream_latency_ns(
+        adc_latency=adc_latency_per_execution,
+        tia_latency=tia_latency_per_execution,
+        snh_latency=snh_latency_per_execution,
+        mux_latency=mux_latency_per_execution,
+        io_latency=io_latency_per_execution,
     )
 
     dac_energy_total = dac_energy + delta_dac_energy
-    dac_path_latency = max(dac_latency, delta_dac_latency)
+    dac_path_latency_per_execution = max(dac_latency_per_execution, delta_dac_latency_per_execution)
+    dac_path_latency = base_reads * dac_path_latency_per_execution
 
     stage_energy = array_energy + dac_energy_total + adc_draft_energy + adc_residual_energy
-    stage_latency = array_latency + dac_path_latency + output_stream_latency
-
     stage_energy += tia_e + snh_e + mux_e + io_e + sw_e + wd_e
-    stage_latency += sw_t + wd_t
+    stage_latency, steady_state_latency = _pipelined_latency_for_repeated_executions(
+        executions=base_reads,
+        component_latencies_ns=[
+            dac_path_latency_per_execution,
+            array_latency_per_execution,
+            output_stream_latency_per_execution,
+            sw_latency_per_execution,
+            wd_latency_per_execution,
+        ],
+    )
 
     acc.add_stage(stage, stage_energy, stage_latency)
     acc.add_component("arrays", array_energy, array_latency)
@@ -1100,8 +1145,9 @@ def _add_knob_analog_stage(
     )
     return _AnalogStageStreamInfo(
         outputs=adc_path_outputs,
-        stream_steps=base_reads * float(adc_steps),
-        output_stream_latency_ns=output_stream_latency,
+        executions=base_reads,
+        stream_steps_per_execution=float(max(adc_draft_steps, adc_residual_steps)),
+        steady_state_latency_ns=steady_state_latency,
     )
 
 
@@ -1141,7 +1187,8 @@ def _token_step_costs_knob(
     output_elements = _analog_stage_output_elements(model)
     draft_num_slices = ceil(_draft_activation_bits(model, hardware) / hardware.analog.dac_bits)
     verify_num_slices = ceil(_verify_activation_bits(model, hardware) / hardware.analog.dac_bits)
-    buf_knobs = hardware.soc.buffers_add
+    draft_buf_knobs = _buffers_add_knobs_for_phase(hardware=hardware, phase="draft")
+    verify_buf_knobs = _buffers_add_knobs_for_phase(hardware=hardware, phase="verify")
 
     draft = _TokenAccumulator()
     verify_full = _TokenAccumulator()
@@ -1155,7 +1202,6 @@ def _token_step_costs_knob(
                 num_tiles=num_tiles[stage],
                 num_slices=verify_num_slices if precision == PrecisionMode.full else draft_num_slices,
                 xbar_size=hardware.analog.xbar_size,
-                adc_steps=hardware.analog.num_columns_per_adc,
                 specs=specs,
                 periphery=hardware.analog.periphery,
                 hardware=hardware,
@@ -1167,7 +1213,6 @@ def _token_step_costs_knob(
                 num_tiles=num_tiles[stage],
                 num_slices=verify_num_slices,
                 xbar_size=hardware.analog.xbar_size,
-                adc_steps=hardware.analog.num_columns_per_adc,
                 specs=specs,
                 periphery=hardware.analog.periphery,
                 hardware=hardware,
@@ -1177,18 +1222,20 @@ def _token_step_costs_knob(
             if draft_stream is not None:
                 _add_streamed_buffers_add(
                     acc=draft,
-                    buf_knobs=buf_knobs,
+                    buf_knobs=draft_buf_knobs,
                     outputs=draft_stream.outputs,
-                    stream_steps=draft_stream.stream_steps,
-                    overlap_latency_ns=draft_stream.output_stream_latency_ns,
+                    executions=draft_stream.executions,
+                    stream_steps_per_execution=draft_stream.stream_steps_per_execution,
+                    overlap_steady_state_ns=draft_stream.steady_state_latency_ns,
                 )  # per-sample accumulation into the output register
             if verify_full_stream is not None:
                 _add_streamed_buffers_add(
                     acc=verify_full,
-                    buf_knobs=buf_knobs,
+                    buf_knobs=verify_buf_knobs,
                     outputs=verify_full_stream.outputs,
-                    stream_steps=verify_full_stream.stream_steps,
-                    overlap_latency_ns=verify_full_stream.output_stream_latency_ns,
+                    executions=verify_full_stream.executions,
+                    stream_steps_per_execution=verify_full_stream.stream_steps_per_execution,
+                    overlap_steady_state_ns=verify_full_stream.steady_state_latency_ns,
                 )  # ADC-output combine (bonus token)
 
         for feature in enabled_dpu_features:
@@ -1247,14 +1294,17 @@ def _verify_drafted_token_additional_stage_knob(
     output_tiles = _analog_stage_output_tiles(model, hardware.analog.xbar_size)
     output_elements = _analog_stage_output_elements(model)
     verify_num_slices = ceil(_verify_activation_bits(model, hardware) / hardware.analog.dac_bits)
-    buf_knobs = hardware.soc.buffers_add
+    verify_buf_knobs = _buffers_add_knobs_for_phase(hardware=hardware, phase="verify")
 
     additional = _TokenAccumulator()
 
     for layer in range(model.n_layers):
         policy = model.draft_policy.for_layer(layer)
         for stage, executed_precision in {"qkv": policy.qkv, "wo": policy.wo, "ffn": policy.ffn}.items():
-            mode_name = "none" if executed_precision == PrecisionMode.full else "verify_residual_only"
+            if hardware.reuse_policy == ReusePolicy.reread:
+                mode_name = "verify_full"
+            else:
+                mode_name = "none" if executed_precision == PrecisionMode.full else "verify_residual_only"
 
             verify_stream = _add_knob_analog_stage(
                 acc=additional,
@@ -1262,27 +1312,29 @@ def _verify_drafted_token_additional_stage_knob(
                 num_tiles=num_tiles[stage],
                 num_slices=verify_num_slices,
                 xbar_size=hardware.analog.xbar_size,
-                adc_steps=hardware.analog.num_columns_per_adc,
                 specs=specs,
                 periphery=hardware.analog.periphery,
                 hardware=hardware,
                 mode_name=mode_name,
             )
 
-            if executed_precision != PrecisionMode.full and verify_stream is not None:
+            if verify_stream is not None:
                 _add_streamed_buffers_add(
                     acc=additional,
-                    buf_knobs=buf_knobs,
+                    buf_knobs=verify_buf_knobs,
                     outputs=verify_stream.outputs,
-                    stream_steps=verify_stream.stream_steps,
-                    overlap_latency_ns=verify_stream.output_stream_latency_ns,
-                )  # streamed residual accumulation into the verify output register
-                _add_streamed_buffers_add(
-                    acc=additional,
-                    buf_knobs=buf_knobs,
-                    outputs=float(output_elements[stage]),
-                    stream_steps=float(output_tiles[stage] * hardware.analog.num_columns_per_adc),
-                )  # one final add of the stored draft result to the verify result
+                    executions=verify_stream.executions,
+                    stream_steps_per_execution=verify_stream.stream_steps_per_execution,
+                    overlap_steady_state_ns=verify_stream.steady_state_latency_ns,
+                )
+                if hardware.reuse_policy == ReusePolicy.reuse and executed_precision != PrecisionMode.full:
+                    _add_streamed_buffers_add(
+                        acc=additional,
+                        buf_knobs=verify_buf_knobs,
+                        outputs=float(output_elements[stage]),
+                        executions=float(output_tiles[stage]),
+                        stream_steps_per_execution=float(hardware.analog.residual_num_columns_per_adc),
+                    )  # one final add of the stored draft result to the verify result
 
         for feature in enabled_dpu_features:
             e_per, t_per = dpu_feature_costs[feature]
@@ -1322,7 +1374,8 @@ def _max_layer_compute_latencies_ns_knob(
     output_elements = _analog_stage_output_elements(model)
     draft_num_slices = ceil(_draft_activation_bits(model, hardware) / hardware.analog.dac_bits)
     verify_num_slices = ceil(_verify_activation_bits(model, hardware) / hardware.analog.dac_bits)
-    buf_knobs = hardware.soc.buffers_add
+    draft_buf_knobs = _buffers_add_knobs_for_phase(hardware=hardware, phase="draft")
+    verify_buf_knobs = _buffers_add_knobs_for_phase(hardware=hardware, phase="verify")
 
     ctrl_e_tok = hardware.soc.control.energy_pj_per_token
     ctrl_t_tok = hardware.soc.control.latency_ns_per_token
@@ -1349,21 +1402,19 @@ def _max_layer_compute_latencies_ns_knob(
                 num_tiles=num_tiles[stage],
                 num_slices=verify_num_slices if executed_precision == PrecisionMode.full else draft_num_slices,
                 xbar_size=hardware.analog.xbar_size,
-                adc_steps=hardware.analog.num_columns_per_adc,
                 specs=specs,
                 periphery=hardware.analog.periphery,
                 hardware=hardware,
                 mode_name="draft_full" if executed_precision == PrecisionMode.full else "draft_default",
             )
 
-            verify_mode_name = "none" if executed_precision == PrecisionMode.full else "verify_residual_only"
+            verify_mode_name = "verify_full" if hardware.reuse_policy == ReusePolicy.reread else ("none" if executed_precision == PrecisionMode.full else "verify_residual_only")
             verify_drafted_stream = _add_knob_analog_stage(
                 acc=verify_drafted,
                 stage=stage,
                 num_tiles=num_tiles[stage],
                 num_slices=verify_num_slices,
                 xbar_size=hardware.analog.xbar_size,
-                adc_steps=hardware.analog.num_columns_per_adc,
                 specs=specs,
                 periphery=hardware.analog.periphery,
                 hardware=hardware,
@@ -1376,7 +1427,6 @@ def _max_layer_compute_latencies_ns_knob(
                 num_tiles=num_tiles[stage],
                 num_slices=verify_num_slices,
                 xbar_size=hardware.analog.xbar_size,
-                adc_steps=hardware.analog.num_columns_per_adc,
                 specs=specs,
                 periphery=hardware.analog.periphery,
                 hardware=hardware,
@@ -1386,34 +1436,39 @@ def _max_layer_compute_latencies_ns_knob(
             if draft_stream is not None:
                 _add_streamed_buffers_add(
                     acc=draft,
-                    buf_knobs=buf_knobs,
+                    buf_knobs=draft_buf_knobs,
                     outputs=draft_stream.outputs,
-                    stream_steps=draft_stream.stream_steps,
-                    overlap_latency_ns=draft_stream.output_stream_latency_ns,
+                    executions=draft_stream.executions,
+                    stream_steps_per_execution=draft_stream.stream_steps_per_execution,
+                    overlap_steady_state_ns=draft_stream.steady_state_latency_ns,
                 )  # per-sample accumulation into the output register
             if verify_bonus_stream is not None:
                 _add_streamed_buffers_add(
                     acc=verify_bonus,
-                    buf_knobs=buf_knobs,
+                    buf_knobs=verify_buf_knobs,
                     outputs=verify_bonus_stream.outputs,
-                    stream_steps=verify_bonus_stream.stream_steps,
-                    overlap_latency_ns=verify_bonus_stream.output_stream_latency_ns,
+                    executions=verify_bonus_stream.executions,
+                    stream_steps_per_execution=verify_bonus_stream.stream_steps_per_execution,
+                    overlap_steady_state_ns=verify_bonus_stream.steady_state_latency_ns,
                 )  # ADC-output combine (bonus token)
 
-            if executed_precision != PrecisionMode.full and verify_drafted_stream is not None:
+            if verify_drafted_stream is not None:
                 _add_streamed_buffers_add(
                     acc=verify_drafted,
-                    buf_knobs=buf_knobs,
+                    buf_knobs=verify_buf_knobs,
                     outputs=verify_drafted_stream.outputs,
-                    stream_steps=verify_drafted_stream.stream_steps,
-                    overlap_latency_ns=verify_drafted_stream.output_stream_latency_ns,
-                )  # streamed residual accumulation into the verify output register
-                _add_streamed_buffers_add(
-                    acc=verify_drafted,
-                    buf_knobs=buf_knobs,
-                    outputs=float(output_elements[stage]),
-                    stream_steps=float(output_tiles[stage] * hardware.analog.num_columns_per_adc),
-                )  # one final add of the stored draft result to the verify result
+                    executions=verify_drafted_stream.executions,
+                    stream_steps_per_execution=verify_drafted_stream.stream_steps_per_execution,
+                    overlap_steady_state_ns=verify_drafted_stream.steady_state_latency_ns,
+                )
+                if hardware.reuse_policy == ReusePolicy.reuse and executed_precision != PrecisionMode.full:
+                    _add_streamed_buffers_add(
+                        acc=verify_drafted,
+                        buf_knobs=verify_buf_knobs,
+                        outputs=float(output_elements[stage]),
+                        executions=float(output_tiles[stage]),
+                        stream_steps_per_execution=float(hardware.analog.residual_num_columns_per_adc),
+                    )  # one final add of the stored draft result to the verify result
 
         for feature in enabled_dpu_features:
             e_per, t_per = dpu_feature_costs[feature]
@@ -1470,7 +1525,8 @@ def _max_layer_compute_latencies_ns_legacy(
         DPU_FEATURES if hardware.memory is None else tuple(feature for feature in DPU_FEATURES if feature != "kv_cache_update")
     )
     analog_outputs = {s: sum(m_out for m_out, _n_in in shapes) for s, shapes in _analog_stage_shapes(model).items()}
-    buf_knobs = hardware.soc.buffers_add
+    draft_buf_knobs = _buffers_add_knobs_for_phase(hardware=hardware, phase="draft")
+    verify_buf_knobs = _buffers_add_knobs_for_phase(hardware=hardware, phase="verify")
 
     ctrl_e_tok = hardware.soc.control.energy_pj_per_token
     ctrl_t_tok = hardware.soc.control.latency_ns_per_token
@@ -1516,7 +1572,7 @@ def _max_layer_compute_latencies_ns_legacy(
                 energy, latency = _legacy_buffers_add_overlap_latency(
                     analog_latency_ns=draft_block_latency,
                     outputs=outputs,
-                    buf_knobs=buf_knobs,
+                    buf_knobs=draft_buf_knobs,
                 )
                 draft = draft.add_energy_latency(
                     "buffers_add",
@@ -1527,7 +1583,7 @@ def _max_layer_compute_latencies_ns_legacy(
                 energy, latency = _legacy_buffers_add_overlap_latency(
                     analog_latency_ns=draft_block_latency,
                     outputs=outputs,
-                    buf_knobs=buf_knobs,
+                    buf_knobs=draft_buf_knobs,
                 )
                 draft = draft.add_energy_latency(
                     "buffers_add",
@@ -1538,7 +1594,7 @@ def _max_layer_compute_latencies_ns_legacy(
             bonus_energy, bonus_latency = _legacy_buffers_add_overlap_latency(
                 analog_latency_ns=verify_bonus_block_latency,
                 outputs=outputs,
-                buf_knobs=buf_knobs,
+                buf_knobs=verify_buf_knobs,
             )
             verify_bonus = verify_bonus.add_energy_latency(
                 "buffers_add",
@@ -1550,7 +1606,7 @@ def _max_layer_compute_latencies_ns_legacy(
                 energy, latency = _legacy_buffers_add_overlap_latency(
                     analog_latency_ns=verify_drafted_block_latency,
                     outputs=outputs,
-                    buf_knobs=buf_knobs,
+                    buf_knobs=verify_buf_knobs,
                 )
                 verify_drafted = verify_drafted.add_energy_latency(
                     "buffers_add",
@@ -1562,7 +1618,7 @@ def _max_layer_compute_latencies_ns_legacy(
                     energy, latency = _legacy_buffers_add_overlap_latency(
                         analog_latency_ns=0.0,
                         outputs=outputs,
-                        buf_knobs=buf_knobs,
+                        buf_knobs=verify_buf_knobs,
                     )
                     verify_drafted = verify_drafted.add_energy_latency(
                         "buffers_add",
@@ -1573,7 +1629,7 @@ def _max_layer_compute_latencies_ns_legacy(
                     energy, latency = _legacy_buffers_add_overlap_latency(
                         analog_latency_ns=verify_drafted_block_latency,
                         outputs=outputs,
-                        buf_knobs=buf_knobs,
+                        buf_knobs=verify_buf_knobs,
                         op_multiplier=2.0,
                     )
                     verify_drafted = verify_drafted.add_energy_latency(
@@ -1900,6 +1956,10 @@ def estimate_sweep(
                 },
             }
         )
+        if hardware.analog.adc.num_columns_per_adc is not None:
+            hardware_knobs["adc"]["num_columns_per_adc"] = hardware.analog.adc.num_columns_per_adc.model_dump(
+                mode="json"
+            )
         periph = hardware.analog.periphery
         if any(
             getattr(getattr(periph, name), field) != 0.0
@@ -1925,6 +1985,11 @@ def estimate_sweep(
         or hardware.soc.verify_setup.latency_ns_per_burst != 0.0
         or any(
             getattr(hardware.soc.buffers_add, field) != 0.0
+            for field in ["energy_pj_per_op", "latency_ns_per_op", "area_mm2_per_unit"]
+        )
+        or any(
+            getattr(getattr(hardware.soc.buffers_add, phase), field) is not None
+            for phase in ["draft", "verify"]
             for field in ["energy_pj_per_op", "latency_ns_per_op", "area_mm2_per_unit"]
         )
         or any(

@@ -59,6 +59,10 @@ analog:
   num_columns_per_adc: 16
   dac_bits: 4
   adc:
+    # Optional per-path override; if omitted, both paths use analog.num_columns_per_adc.
+    # num_columns_per_adc:
+    #   draft: 16
+    #   residual: 32
     draft_bits: 4
     residual_bits: 12
 ```
@@ -126,7 +130,8 @@ Examples:
 
 Validation rules:
 - `xbar_size`, `num_columns_per_adc`, `dac_bits`, `draft_bits`, and `residual_bits` must be positive integers.
-- `xbar_size % num_columns_per_adc == 0`.
+- `xbar_size % analog.num_columns_per_adc == 0`.
+- If `analog.adc.num_columns_per_adc.{draft,residual}` is provided, each stage-specific value must also divide `xbar_size`.
 - Requested ADC/DAC bit-widths must exist in the selected library.
 - If `library` is omitted, default is `puma_like_v1`.
 - `library_file` path handling:

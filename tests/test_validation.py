@@ -94,6 +94,28 @@ analog:
         HardwareConfig.from_yaml(path)
 
 
+def test_split_knob_config_divisibility_rejected(tmp_path: Path) -> None:
+    path = tmp_path / "hardware.yaml"
+    path.write_text(
+        """
+reuse_policy: reuse
+analog:
+  xbar_size: 128
+  num_columns_per_adc: 128
+  dac_bits: 4
+  adc:
+    num_columns_per_adc:
+      draft: 16
+      residual: 24
+    draft_bits: 4
+    residual_bits: 12
+""".lstrip(),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="analog.adc.num_columns_per_adc.residual"):
+        HardwareConfig.from_yaml(path)
+
+
 def test_mixed_knob_and_legacy_config_rejected(tmp_path: Path) -> None:
     path = tmp_path / "hardware.yaml"
     path.write_text(

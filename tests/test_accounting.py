@@ -90,7 +90,7 @@ def test_dac_slicing_scales_analog_counts_and_dac_energy() -> None:
     assert sliced_components.dac_energy_pj > wide_components.dac_energy_pj
 
 
-def test_knob_verify_drafted_ignores_reuse_policy_and_keeps_residual_only_reads() -> None:
+def test_knob_verify_drafted_reread_uses_full_reads() -> None:
     model = ModelConfig.model_validate(BASE_MODEL)
     stats = SpeculationStats(k=1, histogram={0: 1.0})
 
@@ -114,10 +114,10 @@ def test_knob_verify_drafted_ignores_reuse_policy_and_keeps_residual_only_reads(
 
     assert reuse_counts.adc_draft_conversions == pytest.approx(0.0)
     assert reuse_counts.adc_residual_conversions > 0.0
-    assert reread_counts.adc_draft_conversions == pytest.approx(0.0)
+    assert reread_counts.adc_draft_conversions == pytest.approx(reuse_counts.adc_residual_conversions)
     assert reread_counts.adc_residual_conversions == pytest.approx(reuse_counts.adc_residual_conversions)
-    assert reread_counts.array_activations == pytest.approx(reuse_counts.array_activations)
-    assert reread_breakdown.verify_drafted.energy_pj == pytest.approx(reuse_breakdown.verify_drafted.energy_pj)
+    assert reread_counts.array_activations > reuse_counts.array_activations
+    assert reread_breakdown.verify_drafted.energy_pj > reuse_breakdown.verify_drafted.energy_pj
 
 
 def test_reuse_with_full_precision_draft_has_zero_verify_analog_reads() -> None:
@@ -152,6 +152,40 @@ def test_reuse_with_full_precision_draft_has_zero_verify_analog_reads() -> None:
     assert components.dac_energy_pj == pytest.approx(0.0)
     assert components.adc_draft_energy_pj == pytest.approx(0.0)
     assert components.adc_residual_energy_pj == pytest.approx(0.0)
+
+
+def test_phase_specific_buffers_add_overrides_apply_to_draft_and_verify() -> None:
+    model = ModelConfig.model_validate(BASE_MODEL)
+    stats = SpeculationStats(k=1, histogram={0: 1.0})
+    hardware = HardwareConfig.model_validate(
+        {
+            "reuse_policy": "reread",
+            "library": "puma_like_v1",
+            "analog": {
+                "xbar_size": 128,
+                "num_columns_per_adc": 16,
+                "dac_bits": 4,
+                "adc": {"draft_bits": 4, "residual_bits": 12},
+            },
+            "soc": {
+                "buffers_add": {
+                    "energy_pj_per_op": 0.01,
+                    "latency_ns_per_op": 0.0,
+                    "draft": {"latency_ns_per_op": 0.0},
+                    "verify": {"latency_ns_per_op": 10.0},
+                },
+            },
+        }
+    )
+
+    _, breakdown = estimate_point(model=model, hardware=hardware, stats=stats, l_prompt=64)
+
+    assert breakdown.draft.components is not None
+    assert breakdown.verify_drafted.components is not None
+    assert breakdown.verify_bonus.components is not None
+    assert breakdown.draft.components.buffers_add_latency_ns == pytest.approx(0.0)
+    assert breakdown.verify_drafted.components.buffers_add_latency_ns > 0.0
+    assert breakdown.verify_bonus.components.buffers_add_latency_ns > 0.0
 
 
 def test_split_adc_modes_use_shared_dac_across_active_arrays() -> None:
@@ -189,10 +223,59 @@ def test_split_adc_modes_use_shared_dac_across_active_arrays() -> None:
     reread_verify_counts = reread_breakdown.verify_drafted.activation_counts
     assert reread_verify_counts is not None
 
-    # Knob-based verify-drafted ignores reuse policy and always performs residual-only reads.
-    assert reread_verify_counts.adc_draft_conversions == pytest.approx(0.0)
-    assert reread_verify_counts.adc_residual_conversions == pytest.approx(reuse_verify_counts.adc_residual_conversions)
-    assert reread_verify_counts.dac_conversions == pytest.approx(reuse_verify_counts.dac_conversions)
+    # Reread verify for drafted tokens: full read, matching verify-bonus ADC usage.
+    assert reread_verify_counts.adc_draft_conversions == pytest.approx(reuse_bonus_counts.adc_draft_conversions)
+    assert reread_verify_counts.adc_residual_conversions == pytest.approx(reuse_bonus_counts.adc_residual_conversions)
+    assert reread_verify_counts.dac_conversions == pytest.approx(reuse_bonus_counts.dac_conversions)
+
+
+def test_split_adc_columns_reduce_draft_and_residual_scan_latency() -> None:
+    model = ModelConfig.model_validate(BASE_MODEL)
+    stats = SpeculationStats(k=1, histogram={0: 1.0})
+
+    baseline_hw = HardwareConfig.model_validate(
+        {
+            "reuse_policy": "reuse",
+            "library": "puma_like_v1",
+            "analog": {
+                "xbar_size": 128,
+                "num_columns_per_adc": 128,
+                "dac_bits": 4,
+                "adc": {"draft_bits": 4, "residual_bits": 12},
+            },
+        }
+    )
+    split_hw = HardwareConfig.model_validate(
+        {
+            "reuse_policy": "reuse",
+            "library": "puma_like_v1",
+            "analog": {
+                "xbar_size": 128,
+                "num_columns_per_adc": 128,
+                "dac_bits": 4,
+                "adc": {
+                    "num_columns_per_adc": {"draft": 16, "residual": 32},
+                    "draft_bits": 4,
+                    "residual_bits": 12,
+                },
+            },
+        }
+    )
+
+    _, baseline_breakdown = estimate_point(model=model, hardware=baseline_hw, stats=stats, l_prompt=64)
+    _, split_breakdown = estimate_point(model=model, hardware=split_hw, stats=stats, l_prompt=64)
+
+    assert baseline_breakdown.draft.components is not None
+    assert split_breakdown.draft.components is not None
+    assert baseline_breakdown.verify_drafted.components is not None
+    assert split_breakdown.verify_drafted.components is not None
+
+    assert split_breakdown.draft.components.adc_draft_latency_ns == pytest.approx(
+        baseline_breakdown.draft.components.adc_draft_latency_ns / 8.0
+    )
+    assert split_breakdown.verify_drafted.components.adc_residual_latency_ns == pytest.approx(
+        baseline_breakdown.verify_drafted.components.adc_residual_latency_ns / 4.0
+    )
 
 
 def test_draft_activation_bit_override_reduces_draft_slices_only() -> None:

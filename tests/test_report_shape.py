@@ -157,6 +157,40 @@ def test_report_includes_leakage_summary_and_leakage_power_inputs() -> None:
     assert report["hardware_knobs"]["leakage_power"]["sram_nw"] == pytest.approx(500_000.0)
 
 
+def test_report_exposes_split_adc_column_overrides() -> None:
+    model = ModelConfig.model_validate(
+        {
+            "n_layers": 1,
+            "d_model": 64,
+            "n_heads": 8,
+            "activation_bits": 12,
+            "ffn_type": "mlp",
+            "ffn_expansion": 4.0,
+        }
+    )
+    hardware = HardwareConfig.model_validate(
+        {
+            "reuse_policy": "reuse",
+            "analog": {
+                "xbar_size": 128,
+                "num_columns_per_adc": 128,
+                "dac_bits": 4,
+                "adc": {
+                    "num_columns_per_adc": {"draft": 16, "residual": 32},
+                    "draft_bits": 4,
+                    "residual_bits": 12,
+                },
+            },
+        }
+    )
+    stats = SpeculationStats(k=1, histogram={0: 1.0})
+
+    report = estimate_sweep(model=model, hardware=hardware, stats=stats, prompt_lengths=[64]).model_dump(mode="json")
+
+    assert report["hardware_knobs"]["num_columns_per_adc"] == 128
+    assert report["hardware_knobs"]["adc"]["num_columns_per_adc"] == {"draft": 16, "residual": 32}
+
+
 def test_area_breakdown_reports_memory_and_periphery_area_and_excludes_hbm_from_on_chip_total() -> None:
     model = ModelConfig.model_validate(
         {
@@ -294,11 +328,13 @@ def test_periphery_area_counts_both_adc_paths_in_split_architecture(tmp_path) ->
     stats = SpeculationStats(k=1, histogram={0: 1.0})
 
     # For d_model=64, xbar=32: logical arrays per layer = 48 (see test above).
-    # ADC units per path = 48 * (32/16) = 96.
-    # With 1+3 split, both ADC paths exist physically, so TIA units = 2 * 96.
+    # Draft ADC units = 48 * (32/16) = 96.
+    # Residual ADC units = 48 * (32/32) = 48.
+    # TIA units track total ADC instances across both paths.
     # Shared-DAC model: DAC units = logical arrays * xbar_size = 48 * 32 = 1536.
-    expected_adc_units_per_path = 96.0
-    expected_tia_units = 192.0
+    expected_adc_draft_units = 96.0
+    expected_adc_residual_units = 48.0
+    expected_tia_units = 144.0
     expected_dac_units = 1536.0
 
     lib_path = tmp_path / "lib.json"
@@ -353,7 +389,11 @@ def test_periphery_area_counts_both_adc_paths_in_split_architecture(tmp_path) ->
                 "xbar_size": 32,
                 "num_columns_per_adc": 16,
                 "dac_bits": 4,
-                "adc": {"draft_bits": 4, "residual_bits": 4},
+                "adc": {
+                    "num_columns_per_adc": {"draft": 16, "residual": 32},
+                    "draft_bits": 4,
+                    "residual_bits": 4,
+                },
             },
         }
     )
@@ -361,6 +401,6 @@ def test_periphery_area_counts_both_adc_paths_in_split_architecture(tmp_path) ->
     report = estimate_sweep(model=model, hardware=hardware, stats=stats, prompt_lengths=[64]).model_dump(mode="json")
     area_components = report["area_breakdown_mm2"]["on_chip_components"]
     assert area_components["dac_mm2"] == expected_dac_units
-    assert area_components["adc_draft_mm2"] == expected_adc_units_per_path
-    assert area_components["adc_residual_mm2"] == expected_adc_units_per_path
+    assert area_components["adc_draft_mm2"] == expected_adc_draft_units
+    assert area_components["adc_residual_mm2"] == expected_adc_residual_units
     assert area_components["tia_mm2"] == expected_tia_units

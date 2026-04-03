@@ -144,6 +144,9 @@ def test_hyflexpim_song_example_library_loads_expected_anchors() -> None:
     assert hardware.library_file == str((repo_root / "examples" / "library_hyflexpim_song_2025.json").resolve())
     assert hardware.analog is not None
     assert hardware.analog.num_columns_per_adc == 128
+    assert hardware.analog.adc.num_columns_per_adc is not None
+    assert hardware.analog.draft_num_columns_per_adc == 16
+    assert hardware.analog.residual_num_columns_per_adc == 32
     assert hardware.analog.delta_readout.draft.enabled is True
     assert hardware.analog.delta_readout.verify.enabled is True
     assert hardware.soc.draft_activation_bits == 8
@@ -153,7 +156,7 @@ def test_hyflexpim_song_example_library_loads_expected_anchors() -> None:
     assert specs.array.energy_pj_per_activation == pytest.approx(2.37421875)
     assert specs.adc_draft.area_mm2_per_unit == pytest.approx(0.00017248425456334811)
     assert specs.adc_draft.latency_ns_per_conversion == pytest.approx(0.665581869510665)
-    assert specs.adc_residual.area_mm2_per_unit == pytest.approx(0.0008886903249297807)
+    assert specs.adc_residual.area_mm2_per_unit == pytest.approx(0.0034466208595832107)
     assert hardware.analog.periphery.tia.area_mm2_per_unit == pytest.approx(0.0)
     assert hardware.soc.buffers_add.area_mm2_per_unit == pytest.approx(0.000779)
     assert hardware.leakage_power.arrays_nw == pytest.approx(91.12174474446854)

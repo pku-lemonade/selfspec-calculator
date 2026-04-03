@@ -134,15 +134,51 @@ class HardwareCosts(BaseModel):
     digital_overhead_area_mm2_per_layer: float = Field(0.0, ge=0.0)
 
 
+class AdcColumnConfig(BaseModel):
+    draft: int = Field(..., ge=1)
+    residual: int = Field(..., ge=1)
+
+
 class AdcResolutionConfig(BaseModel):
     draft_bits: int = Field(..., ge=1)
     residual_bits: int = Field(..., ge=1)
+    num_columns_per_adc: AdcColumnConfig | None = None
 
 
 class PerOpOverheadSpec(BaseModel):
     energy_pj_per_op: float = Field(0.0, ge=0.0)
     latency_ns_per_op: float = Field(0.0, ge=0.0)
     area_mm2_per_unit: float = Field(0.0, ge=0.0)
+
+
+class PerOpOverheadOverride(BaseModel):
+    energy_pj_per_op: float | None = Field(default=None, ge=0.0)
+    latency_ns_per_op: float | None = Field(default=None, ge=0.0)
+    area_mm2_per_unit: float | None = Field(default=None, ge=0.0)
+
+
+class BuffersAddSpec(PerOpOverheadSpec):
+    draft: PerOpOverheadOverride = Field(default_factory=PerOpOverheadOverride)
+    verify: PerOpOverheadOverride = Field(default_factory=PerOpOverheadOverride)
+
+    def for_phase(self, phase: str) -> PerOpOverheadSpec:
+        if phase == "draft":
+            override = self.draft
+        elif phase == "verify":
+            override = self.verify
+        else:
+            raise ValueError(f"Unsupported buffers_add phase: {phase}")
+        return PerOpOverheadSpec(
+            energy_pj_per_op=(
+                self.energy_pj_per_op if override.energy_pj_per_op is None else override.energy_pj_per_op
+            ),
+            latency_ns_per_op=(
+                self.latency_ns_per_op if override.latency_ns_per_op is None else override.latency_ns_per_op
+            ),
+            area_mm2_per_unit=(
+                self.area_mm2_per_unit if override.area_mm2_per_unit is None else override.area_mm2_per_unit
+            ),
+        )
 
 
 class AnalogPeripheryKnobs(BaseModel):
@@ -178,13 +214,31 @@ class AnalogKnobs(BaseModel):
     periphery: AnalogPeripheryKnobs = Field(default_factory=AnalogPeripheryKnobs)
     delta_readout: DeltaReadoutKnobs = Field(default_factory=DeltaReadoutKnobs)
 
+    @property
+    def draft_num_columns_per_adc(self) -> int:
+        if self.adc.num_columns_per_adc is not None:
+            return self.adc.num_columns_per_adc.draft
+        return self.num_columns_per_adc
+
+    @property
+    def residual_num_columns_per_adc(self) -> int:
+        if self.adc.num_columns_per_adc is not None:
+            return self.adc.num_columns_per_adc.residual
+        return self.num_columns_per_adc
+
     @model_validator(mode="after")
     def _validate_divisibility(self) -> "AnalogKnobs":
-        if self.xbar_size % self.num_columns_per_adc != 0:
-            raise ValueError(
-                f"analog.xbar_size ({self.xbar_size}) must be divisible by "
-                f"analog.num_columns_per_adc ({self.num_columns_per_adc})"
-            )
+        columns_per_adc = {
+            "analog.num_columns_per_adc": self.num_columns_per_adc,
+            "analog.adc.num_columns_per_adc.draft": self.draft_num_columns_per_adc,
+            "analog.adc.num_columns_per_adc.residual": self.residual_num_columns_per_adc,
+        }
+        for field_name, value in columns_per_adc.items():
+            if self.xbar_size % value != 0:
+                raise ValueError(
+                    f"analog.xbar_size ({self.xbar_size}) must be divisible by "
+                    f"{field_name} ({value})"
+                )
         return self
 
 
@@ -244,7 +298,7 @@ class SocKnobs(BaseModel):
     draft_activation_bits: int | None = Field(default=None, ge=1)
     verify_activation_bits: int | None = Field(default=None, ge=1)
     verify_setup: VerifySetupKnobs = Field(default_factory=VerifySetupKnobs)
-    buffers_add: PerOpOverheadSpec = Field(default_factory=PerOpOverheadSpec)
+    buffers_add: BuffersAddSpec = Field(default_factory=BuffersAddSpec)
     control: ControlOverheadKnobs = Field(default_factory=ControlOverheadKnobs)
 
 
@@ -293,7 +347,7 @@ class SocLibraryDefaults(BaseModel):
     draft_activation_bits: int | None = Field(default=None, ge=1)
     verify_activation_bits: int | None = Field(default=None, ge=1)
     verify_setup: VerifySetupKnobs = Field(default_factory=VerifySetupKnobs)
-    buffers_add: PerOpOverheadSpec = Field(default_factory=PerOpOverheadSpec)
+    buffers_add: BuffersAddSpec = Field(default_factory=BuffersAddSpec)
     control: ControlOverheadKnobs = Field(default_factory=ControlOverheadKnobs)
 
 
@@ -638,6 +692,12 @@ class HardwareConfig(BaseModel):
         for field in ["energy_pj_per_op", "latency_ns_per_op", "area_mm2_per_unit"]:
             if field not in self.soc.buffers_add.model_fields_set:
                 setattr(self.soc.buffers_add, field, getattr(soc_defaults.buffers_add, field))
+        for phase_name in ["draft", "verify"]:
+            cur_spec = getattr(self.soc.buffers_add, phase_name)
+            def_spec = getattr(soc_defaults.buffers_add, phase_name)
+            for field in ["energy_pj_per_op", "latency_ns_per_op", "area_mm2_per_unit"]:
+                if field not in cur_spec.model_fields_set:
+                    setattr(cur_spec, field, getattr(def_spec, field))
         for field in ["energy_pj_per_token", "latency_ns_per_token", "energy_pj_per_burst", "latency_ns_per_burst"]:
             if field not in self.soc.control.model_fields_set:
                 setattr(self.soc.control, field, getattr(soc_defaults.control, field))

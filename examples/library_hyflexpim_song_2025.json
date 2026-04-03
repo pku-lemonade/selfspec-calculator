@@ -255,8 +255,14 @@
     "soc": {
       "buffers_add": {
         "energy_pj_per_op": 0.709,
-        "latency_ns_per_op": 2.0,
-        "area_mm2_per_unit": 0.000779
+        "latency_ns_per_op": 0.5,
+        "area_mm2_per_unit": 0.000779,
+        "draft": {
+          "latency_ns_per_op": 0.1
+        },
+        "verify": {
+          "latency_ns_per_op": 0.5
+        }
       },
       "control": {
         "energy_pj_per_token": 0.1178,
