@@ -87,12 +87,14 @@ memory:
   # PPA coefficients (energy/byte, bandwidth, latency, and optional area) can be provided explicitly,
   # but are typically resolved from the selected `library` (e.g., `science_adi9405_v1_neurosim`).
   # Any field provided here overrides the library (including explicit `0.0`).
-  sram: {}
+  sram: {}  # speculative KV SRAM buffer
+  attention_cim_sram: {}  # local SRAM-CIM storage/read path for QK/PV units
   hbm: {}
   fabric: {}
-  # Optional for area modeling of attention SRAM-CIM storage:
-  # sram.capacity_bytes lets the tool derive area-per-byte from CACTI-style area+capacity.
-  # If omitted, attention SRAM-CIM storage area defaults to 0.
+  # Optional for area + dynamic-energy modeling of attention SRAM-CIM storage:
+  # attention_cim_sram.capacity_bytes lets the tool derive area-per-byte from a
+  # profile SRAM macro; if omitted, the estimator falls back to memory.sram for
+  # attention SRAM area only so older configs keep their previous area behavior.
   kv_cache:
     # Optional capacity check: enforce `L_prompt + K <= max_context_tokens` during sweeps.
     max_context_tokens: null
@@ -273,6 +275,7 @@ lat=<...>us/tok; thr=<...> tok/s; tok/J=<...>; area=<...>mm^2
   - Layer-pipelined mode mismatch-gates verify-stage KV reads via outcome-conditioned executed-step accounting.
   - HBM KV writes are commit-only (Policy B).
   - ownership rule: KV update compute is excluded from DPU features and owned by movement accounting (`kv_cache` stage + `sram/hbm/fabric` components).
+  - `memory.sram` models the speculative KV SRAM buffer, while `memory.attention_cim_sram` models the local QK/PV SRAM-CIM read path.
   - non-KV intermediate movement is currently excluded and explicitly reported under `movement_accounting.excluded`.
   - Optional capacity check: when `memory.kv_cache.max_context_tokens` is set, sweeps must satisfy `L_prompt + K <= max_context_tokens`.
 - Full-read dual-ADC latency uses parallel timing:

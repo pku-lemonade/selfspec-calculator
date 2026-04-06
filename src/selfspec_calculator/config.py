@@ -334,6 +334,7 @@ class KvCacheMemoryKnobs(BaseModel):
 
 class MemoryKnobs(BaseModel):
     sram: MemoryTechKnobs = Field(default_factory=MemoryTechKnobs)
+    attention_cim_sram: MemoryTechKnobs = Field(default_factory=MemoryTechKnobs)
     hbm: MemoryTechKnobs = Field(default_factory=MemoryTechKnobs)
     fabric: MemoryTechKnobs = Field(default_factory=MemoryTechKnobs)
     kv_cache: KvCacheMemoryKnobs = Field(default_factory=KvCacheMemoryKnobs)
@@ -341,6 +342,7 @@ class MemoryKnobs(BaseModel):
 
 class MemoryLibraryDefaults(BaseModel):
     sram: MemoryTechKnobs = Field(default_factory=MemoryTechKnobs)
+    attention_cim_sram: MemoryTechKnobs = Field(default_factory=MemoryTechKnobs)
     hbm: MemoryTechKnobs = Field(default_factory=MemoryTechKnobs)
     fabric: MemoryTechKnobs = Field(default_factory=MemoryTechKnobs)
 
@@ -726,7 +728,7 @@ class HardwareConfig(BaseModel):
 
         if self.memory is not None:
             memory_defaults = MemoryLibraryDefaults.model_validate(lib.get("memory", {}))
-            for name in ["sram", "hbm", "fabric"]:
+            for name in ["sram", "attention_cim_sram", "hbm", "fabric"]:
                 cur_tech = getattr(self.memory, name)
                 def_tech = getattr(memory_defaults, name)
                 for field in [

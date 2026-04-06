@@ -86,6 +86,7 @@ def test_backward_compatible_defaults_keep_new_fields_zero_or_null() -> None:
     assert breakdown.total.components.input_registers_energy_pj == pytest.approx(0.0)
     assert breakdown.total.components.output_registers_energy_pj == pytest.approx(0.0)
     assert breakdown.total.components.tia_energy_pj == pytest.approx(0.0)
+    assert breakdown.total.components.attention_cim_sram_energy_pj == pytest.approx(0.0)
     assert breakdown.total.components.sram_energy_pj == pytest.approx(0.0)
     assert breakdown.total.components.hbm_energy_pj == pytest.approx(0.0)
     assert breakdown.total.components.fabric_energy_pj == pytest.approx(0.0)
@@ -701,11 +702,11 @@ def test_attention_cim_units_scale_qk_pv_latency_and_area() -> None:
     # - MAC logic area from a separate per-unit knob (to be replaced by DC later)
     hw1 = _base_knob_hardware(
         soc={"attention_cim_units": 1, "attention_cim_mac_area_mm2_per_unit": 0.25},
-        memory={"sram": {"area_mm2": 2.0, "capacity_bytes": 131072}},
+        memory={"attention_cim_sram": {"area_mm2": 2.0, "capacity_bytes": 131072}},
     )
     hw8 = _base_knob_hardware(
         soc={"attention_cim_units": 8, "attention_cim_mac_area_mm2_per_unit": 0.25},
-        memory={"sram": {"area_mm2": 2.0, "capacity_bytes": 131072}},
+        memory={"attention_cim_sram": {"area_mm2": 2.0, "capacity_bytes": 131072}},
     )
 
     _, b1 = estimate_point(model=model, hardware=hw1, stats=stats, l_prompt=64)
@@ -734,6 +735,39 @@ def test_attention_cim_units_scale_qk_pv_latency_and_area() -> None:
     assert c8["attention_cim_mac_mm2"] - c1["attention_cim_mac_mm2"] == pytest.approx(expected_delta_mac)
     # Base digital overhead remains separate from attention-CIM split components.
     assert c8["digital_overhead_mm2"] == pytest.approx(c1["digital_overhead_mm2"])
+
+
+def test_attention_cim_sram_energy_is_charged_separately_from_attention_mac_logic() -> None:
+    model = ModelConfig.model_validate(BASE_MODEL)
+    stats = SpeculationStats(k=1, histogram={0: 1.0})
+    l_prompt = 64
+    energy_pj_per_byte = 2.5
+
+    hw0 = _base_knob_hardware(soc={"attention_cim_units": 4})
+    hw1 = _base_knob_hardware(
+        soc={"attention_cim_units": 4},
+        memory={
+            "attention_cim_sram": {
+                "read_energy_pj_per_byte": energy_pj_per_byte,
+                "read_bandwidth_GBps": 1_000.0,
+                "read_latency_ns": 0.0,
+            }
+        },
+    )
+
+    _, b0 = estimate_point(model=model, hardware=hw0, stats=stats, l_prompt=l_prompt)
+    _, b1 = estimate_point(model=model, hardware=hw1, stats=stats, l_prompt=l_prompt)
+
+    qk_pv_ops = model.n_heads * l_prompt * model.d_head
+    bytes_per_element = ceil(model.activation_bits / 8)
+    expected_per_stage = float(model.n_layers) * float(qk_pv_ops) * float(bytes_per_element) * energy_pj_per_byte
+
+    assert b1.draft.components.attention_cim_sram_energy_pj - b0.draft.components.attention_cim_sram_energy_pj == (
+        pytest.approx(2.0 * expected_per_stage)
+    )
+    assert b1.draft.stages.qk_energy_pj - b0.draft.stages.qk_energy_pj == pytest.approx(expected_per_stage)
+    assert b1.draft.stages.pv_energy_pj - b0.draft.stages.pv_energy_pj == pytest.approx(expected_per_stage)
+    assert b1.draft.components.attention_engine_energy_pj == pytest.approx(b0.draft.components.attention_engine_energy_pj)
 
 
 def test_max_context_tokens_enforced_when_set() -> None:

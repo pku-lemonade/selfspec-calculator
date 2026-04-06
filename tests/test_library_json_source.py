@@ -163,8 +163,12 @@ def test_hyflexpim_song_example_library_loads_expected_anchors() -> None:
     assert hardware.analog.periphery.output_registers.area_mm2_per_unit == pytest.approx(5.0390625e-06)
     assert hardware.analog.periphery.tia.area_mm2_per_unit == pytest.approx(0.0)
     assert hardware.soc.buffers_add.area_mm2_per_unit == pytest.approx(0.000779)
+    assert hardware.memory is not None
+    assert hardware.memory.attention_cim_sram.read_energy_pj_per_byte == pytest.approx(16.65390625)
+    assert hardware.memory.attention_cim_sram.capacity_bytes == 2097152
     assert hardware.leakage_power.arrays_nw == pytest.approx(91.12174474446854)
     assert hardware.leakage_power.input_registers_nw == pytest.approx(0.0)
+    assert hardware.leakage_power.sram_nw == pytest.approx(0.0)
 
 
 def test_song_analog_sramcim_library_supports_adc_bits_2_through_12(tmp_path: Path) -> None:

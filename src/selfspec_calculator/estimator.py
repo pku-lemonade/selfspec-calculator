@@ -521,6 +521,8 @@ def _legacy_components_from_stages(stages: StageBreakdown) -> ComponentBreakdown
 def _add_dpu_feature_stage(
     *,
     acc: _TokenAccumulator,
+    model: ModelConfig,
+    hardware: HardwareConfig,
     feature: str,
     ops: float,
     energy_per_op: float,
@@ -530,12 +532,23 @@ def _add_dpu_feature_stage(
     if ops <= 0.0:
         return
 
-    energy = ops * energy_per_op
-    latency = (ops * latency_per_op) / float(max(parallel_units, 1))
+    base_energy = ops * energy_per_op
+    base_latency = (ops * latency_per_op) / float(max(parallel_units, 1))
+    extra_energy, extra_raw_latency = _attention_cim_sram_component_cost(
+        model=model,
+        hardware=hardware,
+        feature=feature,
+        ops=ops,
+        parallel_units=parallel_units,
+    )
+    extra_latency = max(0.0, extra_raw_latency - base_latency)
+    energy = base_energy + extra_energy
+    latency = base_latency + extra_latency
     stage = DPU_STAGE_BY_FEATURE[feature]
     component = DPU_COMPONENT_BY_FEATURE[feature]
     acc.add_stage(stage, energy, latency)
-    acc.add_component(component, energy, latency)
+    acc.add_component(component, base_energy, base_latency)
+    acc.add_component("attention_cim_sram", extra_energy, extra_latency)
     acc.add_dpu_feature(feature, ops=ops, energy_pj=energy, latency_ns=latency)
 
 
@@ -547,20 +560,52 @@ def _attention_cim_unit_mac_area_mm2(*, hardware: HardwareConfig) -> float:
     return float(hardware.soc.attention_cim_mac_area_mm2_per_unit)
 
 
+def _attention_cim_storage_bytes_per_element(*, model: ModelConfig, hardware: HardwareConfig) -> int:
+    bits_per_element = hardware.soc.attention_cim_storage_bits_per_element or model.activation_bits
+    return ceil(bits_per_element / 8)
+
+
+def _attention_cim_unit_sram_bytes(*, model: ModelConfig, hardware: HardwareConfig) -> float:
+    assert hardware.analog is not None
+    logical_array_elements = hardware.analog.xbar_size * hardware.analog.xbar_size
+    return float(logical_array_elements * _attention_cim_storage_bytes_per_element(model=model, hardware=hardware))
+
+
+def _attention_cim_sram_component_cost(
+    *,
+    model: ModelConfig,
+    hardware: HardwareConfig,
+    feature: str,
+    ops: float,
+    parallel_units: int,
+) -> tuple[float, float]:
+    if feature not in {"attention_qk", "attention_pv"} or hardware.memory is None:
+        return (0.0, 0.0)
+
+    tech = hardware.memory.attention_cim_sram
+    total_read_bytes = float(ops) * float(_attention_cim_storage_bytes_per_element(model=model, hardware=hardware))
+    energy = total_read_bytes * tech.read_energy_pj_per_byte
+
+    latency = 0.0
+    if total_read_bytes > 0.0:
+        bytes_per_unit = total_read_bytes / float(max(parallel_units, 1))
+        if tech.read_bandwidth_GBps > 0.0:
+            latency += bytes_per_unit / tech.read_bandwidth_GBps
+        latency += tech.read_latency_ns
+    return (energy, latency)
+
+
 def _attention_cim_unit_sram_area_mm2(*, model: ModelConfig, hardware: HardwareConfig) -> float:
     if hardware.memory is None:
         return 0.0
-    sram = hardware.memory.sram
+    sram = hardware.memory.attention_cim_sram
+    if sram.area_mm2 <= 0.0 or sram.capacity_bytes is None or sram.capacity_bytes <= 0:
+        # Preserve the previous area behavior for configs that still only provide memory.sram.
+        sram = hardware.memory.sram
     if sram.area_mm2 <= 0.0 or sram.capacity_bytes is None or sram.capacity_bytes <= 0:
         return 0.0
-    assert hardware.analog is not None
-
-    bits_per_element = hardware.soc.attention_cim_storage_bits_per_element or model.activation_bits
-    bytes_per_element = ceil(bits_per_element / 8)
-    logical_array_elements = hardware.analog.xbar_size * hardware.analog.xbar_size
-    unit_sram_bytes = logical_array_elements * bytes_per_element
     area_per_byte = float(sram.area_mm2) / float(sram.capacity_bytes)
-    return float(unit_sram_bytes) * area_per_byte
+    return _attention_cim_unit_sram_bytes(model=model, hardware=hardware) * area_per_byte
 
 
 def _area_mm2(model: ModelConfig, hardware: HardwareConfig) -> StageBreakdown:
@@ -761,6 +806,8 @@ def _token_step_costs_legacy(model: ModelConfig, hardware: HardwareConfig, l_pro
             ops = float(dpu_feature_ops[feature])
             _add_dpu_feature_stage(
                 acc=draft,
+                model=model,
+                hardware=hardware,
                 feature=feature,
                 ops=ops,
                 energy_per_op=e_per,
@@ -769,6 +816,8 @@ def _token_step_costs_legacy(model: ModelConfig, hardware: HardwareConfig, l_pro
             )
             _add_dpu_feature_stage(
                 acc=verify_full,
+                model=model,
+                hardware=hardware,
                 feature=feature,
                 ops=ops,
                 energy_per_op=e_per,
@@ -851,6 +900,8 @@ def _verify_drafted_token_additional_stage_legacy(
             parallel_units = hardware.soc.attention_cim_units if feature in {"attention_qk", "attention_pv"} else 1
             _add_dpu_feature_stage(
                 acc=additional,
+                model=model,
+                hardware=hardware,
                 feature=feature,
                 ops=float(dpu_feature_ops[feature]),
                 energy_per_op=e_per,
@@ -1181,6 +1232,8 @@ def _add_knob_analog_stage(
 def _add_knob_digital_stage(
     *,
     acc: _TokenAccumulator,
+    model: ModelConfig,
+    hardware: HardwareConfig,
     feature: str,
     ops: float,
     energy_per_op: float,
@@ -1189,6 +1242,8 @@ def _add_knob_digital_stage(
 ) -> None:
     _add_dpu_feature_stage(
         acc=acc,
+        model=model,
+        hardware=hardware,
         feature=feature,
         ops=ops,
         energy_per_op=energy_per_op,
@@ -1270,6 +1325,8 @@ def _token_step_costs_knob(
             parallel_units = hardware.soc.attention_cim_units if feature in {"attention_qk", "attention_pv"} else 1
             _add_knob_digital_stage(
                 acc=draft,
+                model=model,
+                hardware=hardware,
                 feature=feature,
                 ops=float(dpu_feature_ops[feature]),
                 energy_per_op=e_per,
@@ -1278,6 +1335,8 @@ def _token_step_costs_knob(
             )
             _add_knob_digital_stage(
                 acc=verify_full,
+                model=model,
+                hardware=hardware,
                 feature=feature,
                 ops=float(dpu_feature_ops[feature]),
                 energy_per_op=e_per,
@@ -1368,6 +1427,8 @@ def _verify_drafted_token_additional_stage_knob(
             parallel_units = hardware.soc.attention_cim_units if feature in {"attention_qk", "attention_pv"} else 1
             _add_knob_digital_stage(
                 acc=additional,
+                model=model,
+                hardware=hardware,
                 feature=feature,
                 ops=float(dpu_feature_ops[feature]),
                 energy_per_op=e_per,
@@ -1502,6 +1563,8 @@ def _max_layer_compute_latencies_ns_knob(
             parallel_units = hardware.soc.attention_cim_units if feature in {"attention_qk", "attention_pv"} else 1
             _add_knob_digital_stage(
                 acc=draft,
+                model=model,
+                hardware=hardware,
                 feature=feature,
                 ops=float(dpu_feature_ops[feature]),
                 energy_per_op=e_per,
@@ -1510,6 +1573,8 @@ def _max_layer_compute_latencies_ns_knob(
             )
             _add_knob_digital_stage(
                 acc=verify_drafted,
+                model=model,
+                hardware=hardware,
                 feature=feature,
                 ops=float(dpu_feature_ops[feature]),
                 energy_per_op=e_per,
@@ -1518,6 +1583,8 @@ def _max_layer_compute_latencies_ns_knob(
             )
             _add_knob_digital_stage(
                 acc=verify_bonus,
+                model=model,
+                hardware=hardware,
                 feature=feature,
                 ops=float(dpu_feature_ops[feature]),
                 energy_per_op=e_per,

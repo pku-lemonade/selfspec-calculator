@@ -642,6 +642,16 @@
         "write_bandwidth_GBps": 22.09227667815005,
         "write_energy_pj_per_byte": 18.19015625,
         "write_latency_ns": 3.80895
+      },
+      "attention_cim_sram": {
+        "area_mm2": 18.5478,
+        "capacity_bytes": 2097152,
+        "read_bandwidth_GBps": 22.09227667815005,
+        "read_energy_pj_per_byte": 16.65390625,
+        "read_latency_ns": 3.80895,
+        "write_bandwidth_GBps": 22.09227667815005,
+        "write_energy_pj_per_byte": 18.19015625,
+        "write_latency_ns": 3.80895
       }
     },
     "soc": {
@@ -676,7 +686,8 @@
       "analog_periphery.subarray_switches.*": "absorbed-into-dac: packed into dac.* NeuroSim-derived DAC-like path to avoid double counting",
       "analog_periphery.write_drivers.*": "absorbed-into-dac: packed into dac.* NeuroSim-derived DAC-like path to avoid double counting",
       "dac.*": "neurosim-packed-dac (65nm): sweep numBitInput=1..16 using ../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM main with /tmp/ns_*_fill2 inputs; packed DAC-like latency/energy from (OtherPeriphery - buffer - IC), then minus restored mux proxy to avoid double counting; area similarly minus mux area proxy",
-      "memory.sram.*": "cacti: ../cacti with reference/cacti/science_adi9405_v1_sram.cfg (cache type=ram, 2MiB, 64B block, 65nm); converted read/write nJ per access to pJ/byte by dividing by 64B; bandwidth from block_size/cycle_time; area from data-array area; capacity_bytes set to 2MiB for area-per-byte derivations (e.g., attention SRAM-CIM storage area)",
+      "memory.sram.*": "cacti: ../cacti with reference/cacti/science_adi9405_v1_sram.cfg (cache type=ram, 2MiB, 64B block, 65nm); converted read/write nJ per access to pJ/byte by dividing by 64B; bandwidth from block_size/cycle_time; area from data-array area; reserved for the speculative KV SRAM buffer path",
+      "memory.attention_cim_sram.*": "cacti-proxy: same CACTI SRAM profile as memory.sram, but used as a separate local-attention SRAM-CIM dynamic/area model so QK/PV SRAM energy is not conflated with the KV buffer role",
       "memory.fabric.*": "design-compiler: reference/final_ppa_summary.csv row memory_fabric_axi_dma; area_mm2 from Area(mm2), latency_ns from Delay(ns); energy_pj_per_byte from Energy(pJ/cycle)/(DATA_W/8) with DATA_W=256 from reference/dc_rtl/memory_fabric_axi_dma.v; bandwidth_GBps=(DATA_W/8)/Delay(ns)",
       "memory.hbm.area_mm2": "cacti-dram-proxy (8GiB profile): ../cacti with reference/cacti/science_adi9405_v1_dram.cfg (cache type=main memory, comm-dram cell, 2GiB proxy, 64B block, 65nm); area scaled 4x from 2GiB CACTI data-array area to represent 8GiB capacity",
       "memory.hbm.read_energy_pj_per_byte": "science-paper assumption: reference/science.adi9405_sm.pdf comparison assumption 35 GB/s/W, converted as 1000/35 pJ per byte",
@@ -688,7 +699,7 @@
       "leakage_power.arrays_nw": "neurosim (65nm): analog-only share of chip leakage power from ../DNN_NeuroSim_V1.4/Inference_pytorch/NeuroSIM main output (reference/neurosim/science_adi9405_v1_neurosim_65nm_fill2.out.txt), allocated by area share",
       "leakage_power.adc_*_nw": "neurosim (65nm): ADC share of analog-only chip leakage power from NeuroSim fill2 output, split equally into draft/residual",
       "leakage_power.tia/snh_nw": "neurosim-proxy (65nm): remaining other-periphery share of analog-only chip leakage power from NeuroSim fill2 output after packed-DAC absorption",
-      "leakage_power.sram_nw": "cacti: ../cacti with reference/cacti/science_adi9405_v1_sram.cfg; uses \"Total leakage power of a bank (mW)\" converted to nW",
+      "leakage_power.sram_nw": "set to 0.0 pending separate KV-buffer leakage calibration after splitting attention-local SRAM from the KV SRAM role",
       "leakage_power.hbm_nw": "cacti-dram-proxy (8GiB profile): ../cacti with reference/cacti/science_adi9405_v1_dram.cfg; uses 2GiB \"Total leakage power of a bank (mW)\" scaled by 4x for 8GiB then converted to nW",
       "digital.attention.*": "design-compiler: reference/final_ppa_summary.csv row attention_cim_mac; energy_pj_per_mac from Energy(pJ/cycle), latency_ns_per_mac from Delay(ns), assuming 1 op/cycle",
       "digital.softmax.*": "design-compiler: reference/final_ppa_summary.csv row softmax_unit; energy/latency mapped as per-op (1 op/cycle assumption)",
@@ -819,7 +830,7 @@
       "kv_cache_nw": 109.9762,
       "buffers_add_nw": 82.1292,
       "control_nw": 32.677099999999996,
-      "sram_nw": 2520840000.0,
+      "sram_nw": 0.0,
       "hbm_nw": 242635600.0,
       "fabric_nw": 143.5084
     }

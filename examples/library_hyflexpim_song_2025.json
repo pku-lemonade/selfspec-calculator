@@ -201,6 +201,16 @@
         "area_mm2": 18.5478,
         "capacity_bytes": 2097152
       },
+      "attention_cim_sram": {
+        "read_energy_pj_per_byte": 16.65390625,
+        "write_energy_pj_per_byte": 18.19015625,
+        "read_bandwidth_GBps": 22.09227667815005,
+        "write_bandwidth_GBps": 22.09227667815005,
+        "read_latency_ns": 3.80895,
+        "write_latency_ns": 3.80895,
+        "area_mm2": 18.5478,
+        "capacity_bytes": 2097152
+      },
       "hbm": {
         "read_energy_pj_per_byte": 28.571428571428573,
         "write_energy_pj_per_byte": 28.571428571428573,
@@ -305,7 +315,7 @@
       "kv_cache_nw": 109.9762,
       "buffers_add_nw": 8.687,
       "control_nw": 32.677099999999996,
-      "sram_nw": 2520840000.0,
+      "sram_nw": 0.0,
       "hbm_nw": 242635600.0,
       "fabric_nw": 143.5084
     },
@@ -323,8 +333,10 @@
       "analog_periphery.write_drivers.*": "Kept at the original zero default; WL driver effects are already absorbed into dac.* via the Song Table 2 anchor.",
       "soc.buffers_add.*": "Kept from the original science_adi9405_v1_neurosim backend, but interpreted as the post-ADC adder only (reference/final_ppa_summary.csv row buffers_add_unit), not a folded buffer+quantize block.",
       "digital.*": "Copied unchanged from the original science_adi9405_v1_neurosim library.",
-      "memory.*": "Copied unchanged from the original science_adi9405_v1_neurosim library.",
-      "leakage_power.*": "Copied from the original science_adi9405_v1_neurosim library, except buffers_add_nw now follows buffers_add_unit only."
+      "memory.sram.*": "Copied unchanged from the original science_adi9405_v1_neurosim library and now reserved for the speculative KV SRAM buffer path.",
+      "memory.attention_cim_sram.*": "Copied from the original science_adi9405_v1_neurosim CACTI-backed SRAM profile as a provisional local-attention SRAM-CIM dynamic/area proxy. This is separate from memory.sram so QK/PV SRAM energy can be charged explicitly without tying it to the KV buffer role.",
+      "memory.hbm/fabric.*": "Copied unchanged from the original science_adi9405_v1_neurosim library.",
+      "leakage_power.*": "Copied from the original science_adi9405_v1_neurosim library, except buffers_add_nw now follows buffers_add_unit only and sram_nw is forced to 0.0 until KV-buffer leakage is re-calibrated separately from attention-local SRAM."
     },
     "source_notes": {
       "paper_refs": [

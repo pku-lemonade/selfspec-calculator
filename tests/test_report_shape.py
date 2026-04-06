@@ -62,6 +62,7 @@ def test_knob_report_includes_stage_component_and_library_metadata() -> None:
         assert "input_registers_energy_pj" in components
         assert "output_registers_energy_pj" in components
         assert "attention_engine_energy_pj" in components
+        assert "attention_cim_sram_energy_pj" in components
 
         counts = phase_payload["activation_counts"]
         assert "dac_conversions" in counts

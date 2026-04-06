@@ -143,6 +143,8 @@ class ComponentBreakdown(BaseModel):
 
     attention_engine_energy_pj: float = 0.0
     attention_engine_latency_ns: float = 0.0
+    attention_cim_sram_energy_pj: float = 0.0
+    attention_cim_sram_latency_ns: float = 0.0
     kv_cache_energy_pj: float = 0.0
     kv_cache_latency_ns: float = 0.0
     sram_energy_pj: float = 0.0
@@ -180,6 +182,7 @@ class ComponentBreakdown(BaseModel):
             "subarray_switches": "subarray_switches",
             "write_drivers": "write_drivers",
             "attention_engine": "attention_engine",
+            "attention_cim_sram": "attention_cim_sram",
             "kv_cache": "kv_cache",
             "sram": "sram",
             "hbm": "hbm",
