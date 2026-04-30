@@ -22,6 +22,8 @@ dev = [
 ppa-calculator = "selfspec_calculator.cli:main"
 ppa-k-sweep = "selfspec_calculator.k_sweep_cli:main"
 ppa-batch-inputs = "selfspec_calculator.batch_inputs_cli:main"
+ppa-sota-baselines = "selfspec_calculator.sota_baselines_cli:main"
+ppa-hyflexpim = "selfspec_calculator.hyflexpim_cli:main"
 
 [tool.setuptools]
 package-dir = { "" = "src" }

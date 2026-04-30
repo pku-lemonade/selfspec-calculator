@@ -206,8 +206,10 @@ def test_attention_parallel_units_scale_feature_latency() -> None:
 
     assert b1.draft.dpu_features is not None
     assert b8.draft.dpu_features is not None
-    assert b8.draft.dpu_features.attention_qk_latency_ns == pytest.approx(b1.draft.dpu_features.attention_qk_latency_ns / 8.0)
-    assert b8.draft.dpu_features.attention_pv_latency_ns == pytest.approx(b1.draft.dpu_features.attention_pv_latency_ns / 8.0)
+    # There are four head-local attention tiles here, so eight physical units
+    # cannot reduce latency below one tile wave.
+    assert b8.draft.dpu_features.attention_qk_latency_ns == pytest.approx(b1.draft.dpu_features.attention_qk_latency_ns / 4.0)
+    assert b8.draft.dpu_features.attention_pv_latency_ns == pytest.approx(b1.draft.dpu_features.attention_pv_latency_ns / 4.0)
     assert b8.draft.dpu_features.attention_qk_energy_pj == pytest.approx(b1.draft.dpu_features.attention_qk_energy_pj)
     assert b8.draft.dpu_features.attention_pv_energy_pj == pytest.approx(b1.draft.dpu_features.attention_pv_energy_pj)
 

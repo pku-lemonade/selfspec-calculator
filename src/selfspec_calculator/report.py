@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from .config import InputPaths
 
@@ -439,6 +439,8 @@ class SweepPoint(BaseModel):
 
 
 class Report(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
     generated_at: str
     k: int = Field(..., ge=0)
     reuse_policy: str

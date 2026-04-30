@@ -233,17 +233,18 @@ def test_draft_buffers_add_latency_uses_stream_overlap() -> None:
 
     specs = hardware.resolve_knob_specs()
     num_slices = ceil(model.activation_bits / hardware.analog.dac_bits)
-    tile_counts = {"qkv": 2, "wo": 1, "ffn": 4}
+    sequential_mvm_groups = 1 + 1 + 2
     draft_exec_latency = float(hardware.analog.draft_num_columns_per_adc) * hardware.soc.buffers_add.latency_ns_per_op
     draft_bottleneck = max(
         specs.array.latency_ns_per_activation,
         specs.dac.latency_ns_per_conversion,
         float(hardware.analog.draft_num_columns_per_adc) * specs.adc_draft.latency_ns_per_conversion,
     )
-    expected_per_layer = sum(
-        draft_exec_latency + max(0.0, (tile_count * num_slices - 1) * (draft_exec_latency - draft_bottleneck))
-        for tile_count in tile_counts.values()
+    expected_group_latency = draft_exec_latency + max(
+        0.0,
+        (num_slices - 1) * (draft_exec_latency - draft_bottleneck),
     )
+    expected_per_layer = sequential_mvm_groups * expected_group_latency
     expected = model.n_layers * expected_per_layer
 
     assert breakdown.draft.components is not None
@@ -261,24 +262,23 @@ def test_verify_reuse_buffers_add_exceeds_draft_when_final_add_is_needed() -> No
 
     specs = hardware.resolve_knob_specs()
     num_slices = ceil(model.activation_bits / hardware.analog.dac_bits)
-    tile_counts = {"qkv": 2, "wo": 1, "ffn": 4}
+    sequential_mvm_groups = 1 + 1 + 2
     verify_exec_latency = float(hardware.analog.residual_num_columns_per_adc) * hardware.soc.buffers_add.latency_ns_per_op
     verify_bottleneck = max(
         specs.array.latency_ns_per_activation,
         specs.dac.latency_ns_per_conversion,
         float(hardware.analog.residual_num_columns_per_adc) * specs.adc_residual.latency_ns_per_conversion,
     )
-    output_tiles_per_layer = (
-        ceil((3 * model.d_model) / hardware.analog.xbar_size)
-        + ceil(model.d_model / hardware.analog.xbar_size)
-        + ceil(model.effective_d_ff / hardware.analog.xbar_size)
-        + ceil(model.d_model / hardware.analog.xbar_size)
+    output_stage_waves_per_layer = 1 + 1 + 2
+    final_add_steps = output_stage_waves_per_layer * hardware.analog.residual_num_columns_per_adc
+    expected_group_latency = verify_exec_latency + max(
+        0.0,
+        (num_slices - 1) * (verify_exec_latency - verify_bottleneck),
     )
-    final_add_steps = output_tiles_per_layer * hardware.analog.residual_num_columns_per_adc
-    expected_per_layer = sum(
-        verify_exec_latency + max(0.0, (tile_count * num_slices - 1) * (verify_exec_latency - verify_bottleneck))
-        for tile_count in tile_counts.values()
-    ) + final_add_steps * hardware.soc.buffers_add.latency_ns_per_op
+    expected_per_layer = (
+        sequential_mvm_groups * expected_group_latency
+        + final_add_steps * hardware.soc.buffers_add.latency_ns_per_op
+    )
     expected = model.n_layers * expected_per_layer
 
     assert breakdown.draft.components is not None
@@ -314,6 +314,45 @@ def test_output_stream_periphery_latency_does_not_stack_when_adc_is_slower() -> 
     assert periph_breakdown.verify_bonus.components.snh_latency_ns > 0.0
     assert periph_breakdown.verify_bonus.components.mux_latency_ns > 0.0
     assert periph_breakdown.verify_bonus.latency_ns == pytest.approx(base_breakdown.verify_bonus.latency_ns)
+
+
+def test_analog_linear_latency_uses_parallel_tile_waves_not_tile_count() -> None:
+    model = ModelConfig.model_validate(
+        {
+            "n_layers": 1,
+            "d_model": 1024,
+            "n_heads": 16,
+            "activation_bits": 4,
+            "ffn_type": "mlp",
+            "d_ff": 512,
+        }
+    )
+    stats = SpeculationStats(k=0, histogram={0: 1.0})
+    hardware = _base_knob_hardware(
+        analog={
+            "xbar_size": 128,
+            "num_columns_per_adc": 128,
+            "dac_bits": 4,
+            "adc": {"draft_bits": 4, "residual_bits": 4},
+        },
+    )
+
+    _, breakdown = estimate_point(model=model, hardware=hardware, stats=stats, l_prompt=64)
+
+    specs = hardware.resolve_knob_specs()
+    assert breakdown.verify_bonus.components is not None
+    assert breakdown.verify_bonus.activation_counts is not None
+
+    # QKV, WO, and the two sequential FFN matmuls are four dependent MVM waves.
+    assert breakdown.verify_bonus.components.arrays_latency_ns == pytest.approx(
+        4.0 * specs.array.latency_ns_per_activation
+    )
+
+    # Activity still charges all resident tiles: qkv=192, wo=64, ffn=32+32,
+    # with four active arrays for a full verify read.
+    assert breakdown.verify_bonus.activation_counts.array_activations == pytest.approx(1280.0)
+    old_serial_tile_latency = 320.0 * specs.array.latency_ns_per_activation
+    assert breakdown.verify_bonus.components.arrays_latency_ns < old_serial_tile_latency
 
 
 

@@ -27,6 +27,25 @@ ppa-k-sweep \
   --output out/k_sweep.json
 ```
 
+For matched-workload SOTA baseline projections:
+
+```bash
+ppa-sota-baselines \
+  --prompt-length 64 \
+  --generated-tokens 32 \
+  --output-dir out/sota_baselines_L64_T32
+```
+
+For a local HyFlexPIM analytical simulator on the same decode workload:
+
+```bash
+ppa-hyflexpim \
+  --prompt-length 64 \
+  --generated-tokens 32 \
+  --slc-rate 0.20 \
+  --output-dir out/hyflexpim_L64_T32
+```
+
 ## `model.yaml`
 
 `activation_bits` is required and is used with `analog.dac_bits` to compute serial slicing:
@@ -254,6 +273,65 @@ where `final PPA` is rendered as a compact metrics string:
 ```text
 lat=<...>us/tok; thr=<...> tok/s; tok/J=<...>; area=<...>mm^2
 ```
+
+## `ppa-sota-baselines`
+
+`ppa-sota-baselines` computes calculator-aligned operation counts for the
+current example model YAMLs and emits matched-workload rows for:
+
+- `HARDSEA`: scoped attention-only projection using the paper's average
+  attention throughput and energy efficiency.
+- `PIM-GPT`: peak transformer-block lower-bound projection from published
+  GDDR6-PIM MAC parallelism and power.
+- `HyFlexPIM`: peak analog-linear lower-bound projection from published
+  analog RRAM module geometry and power.
+
+Outputs are written as:
+
+- `sota_baseline_report.json`
+- `workload_ops.csv`
+- `sota_baseline_rows.csv`
+- `summary.md`
+
+Rows marked `lower_bound_projection` are sizing scaffolds, not final
+paper-ready claims until the baseline event/mapping models are validated.
+
+## `ppa-hyflexpim`
+
+`ppa-hyflexpim` runs a local HyFlexPIM-style decode simulator for the
+current model YAMLs. It uses the paper's hybrid SLC/MLC analog RRAM
+organization, post-SVD two-GEMV mapping, bit-serial INT8 analog MVM
+timing, digital RRAM attention timing, and PU/chip sizing from analog
+weight capacity.
+
+The simulator reports two dataflow views:
+
+- `single_stream`: autoregressive request latency. One generated token
+  traverses the layers in order, so layer-PU pipelining cannot make the
+  next token of the same sequence independent.
+- `paper_pipeline`: HyFlexPIM's steady-state layer-PU pipeline period
+  for multiple independent streamed inputs, matching the paper's PU-per-
+  layer dataflow assumption.
+
+Useful knobs:
+
+- `--slc-rate`: fraction of post-SVD ranks mapped to SLC. Decoder-model
+  sensitivity usually starts at `0.20`.
+- `--svd-rank-scale`: scale on the paper's hard-threshold SVD rank.
+  `1.0` approximately preserves original MAC and parameter count.
+- `--tensor-pus-per-layer`: override automatic PUs per layer.
+- `--analog-power-mode`: use full active-PU analog power or only the
+  assigned-module fraction.
+- `--throughput-mode`: choose `single_stream` or `paper_pipeline` for
+  the headline `tok/s` field. Both modes are always emitted in the
+  detailed output.
+
+Outputs are written as:
+
+- `hyflexpim_report.json`
+- `hyflexpim_rows.csv`
+- `hyflexpim_layer_components.csv`
+- `summary.md`
 
 ## Modeling assumptions
 
